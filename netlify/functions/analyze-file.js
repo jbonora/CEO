@@ -1,16 +1,19 @@
 import Anthropic from "@anthropic-ai/sdk";
 
 export async function handler(event) {
-  // Solo permitir POST
   if (event.httpMethod !== "POST") {
     return { statusCode: 405, body: "Method not allowed" };
   }
 
   try {
+    const apiKey = process.env.ANTHROPIC_API_KEY;
+    console.log("API Key exists:", !!apiKey);
+    console.log("API Key starts with:", apiKey ? apiKey.substring(0, 10) : "UNDEFINED");
+
     const { fileContent, fileName, headers, totalRows } = JSON.parse(event.body);
 
     const client = new Anthropic({
-      apiKey: process.env.ANTHROPIC_API_KEY,
+      apiKey: apiKey,
     });
 
     const prompt = `Analiza estos datos de un archivo CSV/Excel de una empresa y propone un esquema de base de datos inteligente.
@@ -55,8 +58,6 @@ Responde SOLO con un JSON válido (sin markdown, sin backticks) con esta estruct
     });
 
     const responseText = message.content[0].text;
-    
-    // Intentar parsear para validar que es JSON válido
     const parsed = JSON.parse(responseText);
 
     return {
