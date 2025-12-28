@@ -8,16 +8,11 @@ export async function handler(event) {
   try {
     const apiKey = process.env.ANTHROPIC_API_KEY;
     console.log("API Key exists:", !!apiKey);
-    console.log("API Key starts with:", apiKey ? apiKey.substring(0, 10) : "UNDEFINED");
+    console.log("API Key length:", apiKey ? apiKey.length : 0);
+    console.log("API Key starts with:", apiKey ? apiKey.substring(0, 15) : "UNDEFINED");
+    console.log("API Key ends with:", apiKey ? apiKey.substring(apiKey.length - 10) : "UNDEFINED");
 
     const { fileContent, fileName, headers, totalRows } = JSON.parse(event.body);
-
-    const client = new Anthropic({
-      apiKey: apiKey,
-    });
-
-    const prompt = `Analiza estos datos de un archivo CSV/Excel de una empresa y propone un esquema de base de datos inteligente.
-
 Archivo: ${fileName}
 Columnas encontradas: ${headers.join(", ")}
 Muestra de datos (primeras 5 filas):
