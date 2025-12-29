@@ -324,13 +324,23 @@ export default function App() {
           {/* Input */}
           <div className="bg-slate-800/50 border-t border-slate-700 px-6 py-4">
             <div className="flex gap-3 max-w-4xl mx-auto">
-              <input
-                type="text"
+              <textarea
                 value={inputValue}
                 onChange={(e) => setInputValue(e.target.value)}
-                onKeyPress={(e) => e.key === "Enter" && handleSendMessage()}
-                placeholder="Escribí tu mensaje..."
-                className="flex-1 bg-slate-900 border border-slate-700 rounded-xl px-4 py-3 focus:outline-none focus:border-emerald-500"
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" && !e.shiftKey) {
+                    e.preventDefault();
+                    handleSendMessage();
+                  }
+                }}
+                placeholder="Escribí tu mensaje... (Shift+Enter para nueva línea)"
+                rows={1}
+                className="flex-1 bg-slate-900 border border-slate-700 rounded-xl px-4 py-3 focus:outline-none focus:border-emerald-500 resize-none overflow-hidden"
+                style={{ minHeight: "48px", maxHeight: "150px" }}
+                onInput={(e) => {
+                  e.target.style.height = "48px";
+                  e.target.style.height = Math.min(e.target.scrollHeight, 150) + "px";
+                }}
               />
               <button
                 onClick={handleSendMessage}
