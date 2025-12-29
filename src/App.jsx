@@ -50,7 +50,16 @@ function AdminView() {
   const [loading, setLoading] = useState(true);
   const [creating, setCreating] = useState(false);
   const [showForm, setShowForm] = useState(false);
-  const [formData, setFormData] = useState({ nombre: "", url: "" });
+  const [formData, setFormData] = useState({ 
+    nombre: "", 
+    url: "", 
+    rubro: "",
+    productos: "",
+    clientes: "",
+    empleados: "",
+    ubicacion: "",
+    notas: ""
+  });
   const [copiedId, setCopiedId] = useState(null);
 
   // Cargar empresas existentes

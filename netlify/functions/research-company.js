@@ -6,7 +6,7 @@ export async function handler(event) {
   }
 
   try {
-    const { nombreEmpresa, urlSitio, emailCliente } = JSON.parse(event.body);
+    const { nombreEmpresa, urlSitio, infoManual } = JSON.parse(event.body);
     
     const anthropicKey = process.env.ANTHROPIC_API_KEY;
     const pbUrl = process.env.POCKETBASE_URL;
@@ -49,11 +49,24 @@ export async function handler(event) {
       }
     }
 
-    // 3. Claude investiga
+    // 3. Claude investiga combinando web + info manual
     const client = new Anthropic({ apiKey: anthropicKey });
 
+    const infoManualTexto = infoManual ? `
+INFORMACIÓN PROPORCIONADA POR EL VENDEDOR:
+- Rubro: ${infoManual.rubro || "No especificado"}
+- Productos/Servicios: ${infoManual.productos || "No especificado"}
+- Clientes típicos: ${infoManual.clientes || "No especificado"}
+- Empleados aprox: ${infoManual.empleados || "No especificado"}
+- Ubicación: ${infoManual.ubicacion || "No especificado"}
+- Notas adicionales: ${infoManual.notas || "Ninguna"}
+` : "";
+
     const researchPrompt = `Sos un CEO que acaba de ser contratado para la empresa "${nombreEmpresa}".
+
 ${urlSitio ? `Su sitio web es: ${urlSitio}` : "No tienen sitio web público."}
+
+${infoManualTexto}
 
 ${sitioContent ? `Contenido extraído del sitio web:
 ---
@@ -61,6 +74,7 @@ ${sitioContent}
 ---` : ""}
 
 Tu tarea: Investigar y extraer toda la información posible sobre esta empresa.
+IMPORTANTE: Combina la información del sitio web (si hay) con la información del vendedor. La información del vendedor es confiable.
 
 Responde SOLO con JSON válido (sin markdown):
 {
@@ -99,9 +113,11 @@ Responde SOLO con JSON válido (sin markdown):
       headers: pbHeaders,
       body: JSON.stringify({
         nombre: research.nombre,
-        rubro: research.rubro,
+        rubro: research.rubro || infoManual?.rubro || null,
         descripcion: research.descripcion,
-        productos_servicios: research.productos_servicios,
+        productos_servicios: research.productos_servicios || infoManual?.productos || null,
+        tipo_clientes: infoManual?.clientes || null,
+        tamano_equipo: infoManual?.empleados ? parseInt(infoManual.empleados) || null : null,
         onboarding_completo: false,
         url_sitio: urlSitio || null,
         ultimo_research: new Date().toISOString(),
@@ -109,7 +125,7 @@ Responde SOLO con JSON válido (sin markdown):
     });
     const empresa = await empresaRes.json();
 
-    // 5. Guardar hechos encontrados CON TRAZABILIDAD
+    // 5. Guardar hechos del sitio web CON TRAZABILIDAD
     const hoyISO = new Date().toISOString().split('T')[0];
     for (const dato of research.datos_interesantes || []) {
       await fetch(`${pbUrl}/api/collections/hechos/records`, {
@@ -120,11 +136,30 @@ Responde SOLO con JSON válido (sin markdown):
           categoria: "otro",
           hecho: dato,
           fuente_tipo: urlSitio ? "web" : "research",
-          fuente_nombre: urlSitio || "investigación inicial",
+          fuente_nombre: urlSitio || "investigación web",
           fuente_url: urlSitio || null,
           fuente_fecha: hoyISO,
           relevancia: "media",
           confianza: urlSitio ? "alta" : "media",
+          vigente: true,
+        }),
+      });
+    }
+
+    // 5b. Guardar hechos de la info manual del vendedor
+    if (infoManual?.notas) {
+      await fetch(`${pbUrl}/api/collections/hechos/records`, {
+        method: "POST",
+        headers: pbHeaders,
+        body: JSON.stringify({
+          empresa_id: empresa.id,
+          categoria: "otro",
+          hecho: `Notas del vendedor: ${infoManual.notas}`,
+          fuente_tipo: "research",
+          fuente_nombre: "Investigación del vendedor",
+          fuente_fecha: hoyISO,
+          relevancia: "alta",
+          confianza: "alta",
           vigente: true,
         }),
       });
