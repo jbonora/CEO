@@ -104,6 +104,29 @@ function AdminView() {
     setTimeout(() => setCopiedId(null), 2000);
   };
 
+  const resetEmpresa = async (empresaId, nombre) => {
+    if (!confirm(`¿Reiniciar conversación de "${nombre}"?\n\nEsto borrará todo el historial de chat y lo que el CEO aprendió en conversaciones. La investigación inicial se mantiene.`)) {
+      return;
+    }
+
+    try {
+      const res = await fetch("/.netlify/functions/reset-empresa", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ empresa_id: empresaId }),
+      });
+
+      if (res.ok) {
+        alert("✅ Conversación reiniciada");
+      } else {
+        alert("Error al reiniciar");
+      }
+    } catch (err) {
+      console.error(err);
+      alert("Error al reiniciar");
+    }
+  };
+
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900 text-white p-6">
       <div className="max-w-4xl mx-auto">
@@ -205,6 +228,13 @@ function AdminView() {
                 
                 <div className="flex items-center gap-2">
                   <button
+                    onClick={() => resetEmpresa(emp.id, emp.nombre)}
+                    className="bg-red-900/50 hover:bg-red-800 px-3 py-2 rounded-lg flex items-center gap-2 text-sm text-red-300"
+                    title="Reiniciar conversación"
+                  >
+                    🔄 Reset
+                  </button>
+                  <button
                     onClick={() => copyLink(emp.id)}
                     className="bg-slate-700 hover:bg-slate-600 px-4 py-2 rounded-lg flex items-center gap-2 text-sm"
                   >
@@ -258,7 +288,14 @@ function ClienteView({ empresaId }) {
       if (res.ok) {
         const data = await res.json();
         setEmpresa(data.empresa);
-        setMessages([{ role: "assistant", content: data.saludo }]);
+        
+        // Si hay mensajes guardados, cargarlos
+        if (data.mensajes && data.mensajes.length > 0) {
+          setMessages(data.mensajes);
+        } else if (data.saludo) {
+          // Si no hay mensajes, mostrar saludo inicial
+          setMessages([{ role: "assistant", content: data.saludo }]);
+        }
       } else {
         setMessages([{ role: "assistant", content: "Hmm, no encontré la configuración de esta empresa. ¿El link es correcto?" }]);
       }

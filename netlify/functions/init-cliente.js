@@ -43,6 +43,30 @@ export async function handler(event) {
     const hechosData = await hechosRes.json();
     const hechos = hechosData.items || [];
 
+    // Obtener mensajes anteriores
+    const mensajesRes = await fetch(`${pbUrl}/api/collections/mensajes/records?filter=(empresa_id='${empresaId}')&sort=-created&perPage=20`, {
+      headers: pbHeaders,
+    });
+    const mensajesData = await mensajesRes.json();
+    const mensajesGuardados = (mensajesData.items || []).reverse();
+
+    // Si hay mensajes anteriores, no generar saludo nuevo
+    if (mensajesGuardados.length > 0) {
+      return {
+        statusCode: 200,
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          empresa: {
+            id: empresa.id,
+            nombre: empresa.nombre,
+            rubro: empresa.rubro,
+          },
+          mensajes: mensajesGuardados.map(m => ({ role: m.role, content: m.content })),
+          saludo: null,
+        }),
+      };
+    }
+
     // Generar saludo personalizado con Claude
     const client = new Anthropic({ apiKey: anthropicKey });
 
@@ -87,6 +111,7 @@ REGLAS:
           nombre: empresa.nombre,
           rubro: empresa.rubro,
         },
+        mensajes: [],
         saludo,
       }),
     };
