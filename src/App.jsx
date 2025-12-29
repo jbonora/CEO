@@ -6,19 +6,14 @@ import * as XLSX from "xlsx";
 export default function App() {
   const [route, setRoute] = useState({ view: "loading", empresaId: null });
 
-  // Detectar ruta al cargar
   useEffect(() => {
     const path = window.location.pathname;
-    
     if (path.startsWith("/e/")) {
-      // Vista cliente: /e/:empresaId
       const empresaId = path.replace("/e/", "");
       setRoute({ view: "cliente", empresaId });
     } else if (path === "/admin" || path === "/admin/") {
-      // Vista admin
       setRoute({ view: "admin", empresaId: null });
     } else {
-      // Por defecto ir a admin (después podés poner landing)
       setRoute({ view: "admin", empresaId: null });
     }
   }, []);
@@ -31,19 +26,13 @@ export default function App() {
     );
   }
 
-  if (route.view === "admin") {
-    return <AdminView />;
-  }
-
-  if (route.view === "cliente") {
-    return <ClienteView empresaId={route.empresaId} />;
-  }
-
+  if (route.view === "admin") return <AdminView />;
+  if (route.view === "cliente") return <ClienteView empresaId={route.empresaId} />;
   return null;
 }
 
 // ============================================
-// VISTA ADMIN (para el vendedor)
+// VISTA ADMIN
 // ============================================
 function AdminView() {
   const [empresas, setEmpresas] = useState([]);
@@ -62,7 +51,6 @@ function AdminView() {
   });
   const [copiedId, setCopiedId] = useState(null);
 
-  // Cargar empresas existentes
   useEffect(() => {
     loadEmpresas();
   }, []);
@@ -91,11 +79,19 @@ function AdminView() {
         body: JSON.stringify({
           nombreEmpresa: formData.nombre,
           urlSitio: formData.url,
+          infoManual: {
+            rubro: formData.rubro,
+            productos: formData.productos,
+            clientes: formData.clientes,
+            empleados: formData.empleados,
+            ubicacion: formData.ubicacion,
+            notas: formData.notas,
+          }
         }),
       });
       
       if (res.ok) {
-        setFormData({ nombre: "", url: "" });
+        setFormData({ nombre: "", url: "", rubro: "", productos: "", clientes: "", empleados: "", ubicacion: "", notas: "" });
         setShowForm(false);
         loadEmpresas();
       }
@@ -138,7 +134,7 @@ function AdminView() {
   };
 
   const resetEmpresa = async (empresaId, nombre) => {
-    if (!confirm(`¿Reiniciar conversación de "${nombre}"?\n\nEsto borrará todo el historial de chat y lo que el CEO aprendió en conversaciones. La investigación inicial se mantiene.`)) {
+    if (!confirm(`¿Reiniciar conversación de "${nombre}"?\n\nEsto borrará el historial de chat. La investigación inicial se mantiene.`)) {
       return;
     }
 
@@ -178,36 +174,106 @@ function AdminView() {
           </button>
         </div>
 
-        {/* Formulario nueva empresa */}
         {showForm && (
           <div className="bg-slate-800 rounded-2xl p-6 mb-6 border border-slate-700">
             <h2 className="text-xl font-semibold mb-4">Configurar Nueva Empresa</h2>
             <p className="text-slate-400 text-sm mb-4">
-              El CEO investigará la empresa antes de presentarse al cliente.
+              Completá lo que sepas. El CEO usará esta info + lo que encuentre en la web.
             </p>
             
             <div className="space-y-4">
-              <div>
-                <label className="block text-sm text-slate-400 mb-1">Nombre de la empresa *</label>
-                <input
-                  type="text"
-                  value={formData.nombre}
-                  onChange={(e) => setFormData({ ...formData, nombre: e.target.value })}
-                  className="w-full bg-slate-900 border border-slate-700 rounded-lg px-4 py-3 focus:outline-none focus:border-emerald-500"
-                  placeholder="Ej: Distribuidora Solar SA"
-                />
-              </div>
-              
-              <div>
-                <label className="block text-sm text-slate-400 mb-1">Sitio web (opcional pero recomendado)</label>
-                <div className="flex items-center gap-2">
-                  <Globe size={20} className="text-slate-500" />
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm text-slate-400 mb-1">Nombre de la empresa *</label>
+                  <input
+                    type="text"
+                    value={formData.nombre}
+                    onChange={(e) => setFormData({ ...formData, nombre: e.target.value })}
+                    className="w-full bg-slate-900 border border-slate-700 rounded-lg px-4 py-2 focus:outline-none focus:border-emerald-500"
+                    placeholder="Ej: Distribuidora Solar SA"
+                  />
+                </div>
+                
+                <div>
+                  <label className="block text-sm text-slate-400 mb-1">Sitio web o Instagram (si tiene)</label>
                   <input
                     type="url"
                     value={formData.url}
                     onChange={(e) => setFormData({ ...formData, url: e.target.value })}
-                    className="flex-1 bg-slate-900 border border-slate-700 rounded-lg px-4 py-3 focus:outline-none focus:border-emerald-500"
-                    placeholder="https://ejemplo.com"
+                    className="w-full bg-slate-900 border border-slate-700 rounded-lg px-4 py-2 focus:outline-none focus:border-emerald-500"
+                    placeholder="https://ejemplo.com o instagram.com/..."
+                  />
+                </div>
+              </div>
+
+              <div className="border-t border-slate-700 pt-4 mt-4">
+                <p className="text-sm text-emerald-400 mb-3">📝 Tu investigación previa (opcional pero útil)</p>
+                
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-sm text-slate-400 mb-1">Rubro</label>
+                    <input
+                      type="text"
+                      value={formData.rubro}
+                      onChange={(e) => setFormData({ ...formData, rubro: e.target.value })}
+                      className="w-full bg-slate-900 border border-slate-700 rounded-lg px-4 py-2 focus:outline-none focus:border-emerald-500"
+                      placeholder="Ej: Mayorista alimenticio"
+                    />
+                  </div>
+                  
+                  <div>
+                    <label className="block text-sm text-slate-400 mb-1">Ubicación</label>
+                    <input
+                      type="text"
+                      value={formData.ubicacion}
+                      onChange={(e) => setFormData({ ...formData, ubicacion: e.target.value })}
+                      className="w-full bg-slate-900 border border-slate-700 rounded-lg px-4 py-2 focus:outline-none focus:border-emerald-500"
+                      placeholder="Ej: Buenos Aires, Zona Sur"
+                    />
+                  </div>
+                  
+                  <div>
+                    <label className="block text-sm text-slate-400 mb-1">Qué vende / servicios</label>
+                    <input
+                      type="text"
+                      value={formData.productos}
+                      onChange={(e) => setFormData({ ...formData, productos: e.target.value })}
+                      className="w-full bg-slate-900 border border-slate-700 rounded-lg px-4 py-2 focus:outline-none focus:border-emerald-500"
+                      placeholder="Ej: Alimentos, bebidas, limpieza"
+                    />
+                  </div>
+                  
+                  <div>
+                    <label className="block text-sm text-slate-400 mb-1">Clientes típicos</label>
+                    <input
+                      type="text"
+                      value={formData.clientes}
+                      onChange={(e) => setFormData({ ...formData, clientes: e.target.value })}
+                      className="w-full bg-slate-900 border border-slate-700 rounded-lg px-4 py-2 focus:outline-none focus:border-emerald-500"
+                      placeholder="Ej: Kioscos, almacenes, minoristas"
+                    />
+                  </div>
+                  
+                  <div>
+                    <label className="block text-sm text-slate-400 mb-1">Empleados aprox</label>
+                    <input
+                      type="text"
+                      value={formData.empleados}
+                      onChange={(e) => setFormData({ ...formData, empleados: e.target.value })}
+                      className="w-full bg-slate-900 border border-slate-700 rounded-lg px-4 py-2 focus:outline-none focus:border-emerald-500"
+                      placeholder="Ej: 5-10"
+                    />
+                  </div>
+                </div>
+                
+                <div className="mt-4">
+                  <label className="block text-sm text-slate-400 mb-1">Notas adicionales (lo que viste en Instagram, lo que te contaron, etc.)</label>
+                  <textarea
+                    value={formData.notas}
+                    onChange={(e) => setFormData({ ...formData, notas: e.target.value })}
+                    rows={3}
+                    className="w-full bg-slate-900 border border-slate-700 rounded-lg px-4 py-2 focus:outline-none focus:border-emerald-500 resize-none"
+                    placeholder="Ej: Tiene Instagram activo con 5k seguidores. El dueño se llama Juan. Hacen promos los viernes..."
                   />
                 </div>
               </div>
@@ -232,7 +298,6 @@ function AdminView() {
           </div>
         )}
 
-        {/* Lista de empresas */}
         <div className="space-y-4">
           <h2 className="text-xl font-semibold">Empresas Activas</h2>
           
@@ -300,7 +365,7 @@ function AdminView() {
 }
 
 // ============================================
-// VISTA CLIENTE (para el dueño de la empresa)
+// VISTA CLIENTE
 // ============================================
 function ClienteView({ empresaId }) {
   const [empresa, setEmpresa] = useState(null);
@@ -312,12 +377,10 @@ function ClienteView({ empresaId }) {
   const messagesEndRef = useRef(null);
   const fileInputRef = useRef(null);
 
-  // Auto-scroll
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages]);
 
-  // Cargar empresa y saludo inicial
   useEffect(() => {
     initChat();
   }, [empresaId]);
@@ -328,12 +391,9 @@ function ClienteView({ empresaId }) {
       if (res.ok) {
         const data = await res.json();
         setEmpresa(data.empresa);
-        
-        // Si hay mensajes guardados, cargarlos
         if (data.mensajes && data.mensajes.length > 0) {
           setMessages(data.mensajes);
         } else if (data.saludo) {
-          // Si no hay mensajes, mostrar saludo inicial
           setMessages([{ role: "assistant", content: data.saludo }]);
         }
       } else {
@@ -346,7 +406,6 @@ function ClienteView({ empresaId }) {
     setLoading(false);
   };
 
-  // Enviar mensaje
   const handleSendMessage = async () => {
     if ((!inputValue.trim() && !pendingFile) || sending) return;
 
@@ -354,7 +413,6 @@ function ClienteView({ empresaId }) {
     setInputValue("");
     setSending(true);
 
-    // Mostrar mensaje del usuario
     if (pendingFile) {
       setMessages(prev => [...prev, { 
         role: "user", 
@@ -379,7 +437,6 @@ function ClienteView({ empresaId }) {
         body: JSON.stringify({
           empresa_id: empresaId,
           mensaje: userMessage,
-          historial: messages.slice(-10),
           archivo: fileData,
         }),
       });
@@ -393,7 +450,6 @@ function ClienteView({ empresaId }) {
     setSending(false);
   };
 
-  // Procesar archivo
   const processFile = async (file) => {
     const ext = file.name.split(".").pop().toLowerCase();
     
@@ -475,7 +531,6 @@ function ClienteView({ empresaId }) {
 
   return (
     <div className="flex flex-col h-screen bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900 text-white">
-      {/* Header */}
       <div className="bg-slate-800/50 border-b border-slate-700 px-6 py-4 flex items-center gap-3">
         <div className="w-10 h-10 bg-gradient-to-r from-emerald-500 to-blue-500 rounded-full flex items-center justify-center">
           <Brain size={20} />
@@ -486,7 +541,6 @@ function ClienteView({ empresaId }) {
         </div>
       </div>
 
-      {/* Messages */}
       <div className="flex-1 overflow-y-auto p-6 space-y-4">
         {messages.map((msg, i) => (
           <div key={i} className={`flex ${msg.role === "user" ? "justify-end" : "justify-start"}`}>
@@ -515,7 +569,6 @@ function ClienteView({ empresaId }) {
         <div ref={messagesEndRef} />
       </div>
 
-      {/* Pending file indicator */}
       {pendingFile && (
         <div className="px-6 pb-2">
           <div className="bg-slate-800 rounded-lg px-4 py-2 flex items-center justify-between">
@@ -530,7 +583,6 @@ function ClienteView({ empresaId }) {
         </div>
       )}
 
-      {/* Input */}
       <div className="bg-slate-800/50 border-t border-slate-700 px-6 py-4">
         <div className="flex gap-3 max-w-4xl mx-auto">
           <button
