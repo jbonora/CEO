@@ -113,6 +113,30 @@ function AdminView() {
     setTimeout(() => setCopiedId(null), 2000);
   };
 
+  const deleteEmpresa = async (empresaId, nombre) => {
+    if (!confirm(`¿ELIMINAR "${nombre}" completamente?\n\n⚠️ Esto borrará TODO: empresa, conversaciones, hechos, métricas. No se puede deshacer.`)) {
+      return;
+    }
+
+    try {
+      const res = await fetch("/.netlify/functions/delete-empresa", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ empresa_id: empresaId }),
+      });
+
+      if (res.ok) {
+        alert("✅ Empresa eliminada");
+        loadEmpresas();
+      } else {
+        alert("Error al eliminar");
+      }
+    } catch (err) {
+      console.error(err);
+      alert("Error al eliminar");
+    }
+  };
+
   const resetEmpresa = async (empresaId, nombre) => {
     if (!confirm(`¿Reiniciar conversación de "${nombre}"?\n\nEsto borrará todo el historial de chat y lo que el CEO aprendió en conversaciones. La investigación inicial se mantiene.`)) {
       return;
@@ -237,11 +261,18 @@ function AdminView() {
                 
                 <div className="flex items-center gap-2">
                   <button
+                    onClick={() => deleteEmpresa(emp.id, emp.nombre)}
+                    className="bg-red-900/50 hover:bg-red-800 px-3 py-2 rounded-lg text-sm text-red-300"
+                    title="Eliminar empresa completamente"
+                  >
+                    🗑️
+                  </button>
+                  <button
                     onClick={() => resetEmpresa(emp.id, emp.nombre)}
-                    className="bg-red-900/50 hover:bg-red-800 px-3 py-2 rounded-lg flex items-center gap-2 text-sm text-red-300"
+                    className="bg-orange-900/50 hover:bg-orange-800 px-3 py-2 rounded-lg text-sm text-orange-300"
                     title="Reiniciar conversación"
                   >
-                    🔄 Reset
+                    🔄
                   </button>
                   <button
                     onClick={() => copyLink(emp.id)}
