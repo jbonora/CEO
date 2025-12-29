@@ -6,7 +6,7 @@ export async function handler(event) {
   }
 
   try {
-    const { empresa_id, mensaje, historial } = JSON.parse(event.body);
+    const { empresa_id, mensaje, historial, archivo } = JSON.parse(event.body);
     
     const anthropicKey = process.env.ANTHROPIC_API_KEY;
     const pbUrl = process.env.POCKETBASE_URL;
@@ -132,10 +132,30 @@ Si no hay datos nuevos, no incluyas el tag.`;
         role: m.role === "assistant" ? "assistant" : "user",
         content: m.content,
       })),
-      { role: "user", content: mensaje },
+      { role: "user", content: contenidoUsuario },
     ];
 
-    // 5. Llamar a Claude
+    // 5. Construir mensaje con archivo si existe
+    let contenidoUsuario = mensaje;
+    
+    if (archivo) {
+      if (archivo.type === "tabular") {
+        contenidoUsuario = `[El usuario adjuntó un archivo: ${archivo.fileName}]
+        
+Datos del archivo:
+- Columnas: ${archivo.headers.join(", ")}
+- Total registros: ${archivo.totalRows}
+- Muestra (primeras 5 filas): ${JSON.stringify(archivo.rows.slice(0, 5), null, 2)}
+
+Mensaje del usuario: ${mensaje || "Analiza este archivo"}`;
+      } else if (archivo.type === "image" || archivo.type === "pdf") {
+        contenidoUsuario = `[El usuario adjuntó: ${archivo.fileName}]
+
+Mensaje del usuario: ${mensaje || "Analiza este documento"}`;
+      }
+    }
+
+    // 6. Llamar a Claude
     const client = new Anthropic({ apiKey: anthropicKey });
     const response = await client.messages.create({
       model: "claude-sonnet-4-20250514",

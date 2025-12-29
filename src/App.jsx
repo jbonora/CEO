@@ -1,77 +1,309 @@
 import { useState, useRef, useEffect } from "react";
-import { Upload, Brain, Database, CheckCircle, Loader2, FileSpreadsheet, FileText, Image, File, Send, Building2, Globe, MessageSquare } from "lucide-react";
+import { Upload, Brain, Loader2, FileSpreadsheet, FileText, Image, Send, Building2, Globe, Plus, ExternalLink, Copy, Check, Paperclip, X } from "lucide-react";
 import Papa from "papaparse";
 import * as XLSX from "xlsx";
 
 export default function App() {
-  const [mode, setMode] = useState("home"); // home | setup | onboarding | chat | upload
-  const [empresa, setEmpresa] = useState(null);
-  const [messages, setMessages] = useState([]);
-  const [inputValue, setInputValue] = useState("");
-  const [loading, setLoading] = useState(false);
-  const [setupData, setSetupData] = useState({ nombre: "", url: "", email: "" });
-  const messagesEndRef = useRef(null);
+  const [route, setRoute] = useState({ view: "loading", empresaId: null });
 
-  // Auto-scroll al último mensaje
+  // Detectar ruta al cargar
   useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [messages]);
-
-  // === SETUP: Investigar empresa ===
-  const handleSetup = async () => {
-    if (!setupData.nombre.trim()) {
-      alert("El nombre de la empresa es requerido");
-      return;
+    const path = window.location.pathname;
+    
+    if (path.startsWith("/e/")) {
+      // Vista cliente: /e/:empresaId
+      const empresaId = path.replace("/e/", "");
+      setRoute({ view: "cliente", empresaId });
+    } else if (path === "/admin" || path === "/admin/") {
+      // Vista admin
+      setRoute({ view: "admin", empresaId: null });
+    } else {
+      // Por defecto ir a admin (después podés poner landing)
+      setRoute({ view: "admin", empresaId: null });
     }
+  }, []);
 
-    setLoading(true);
-    setMode("onboarding");
-    setMessages([{ role: "system", content: "Investigando sobre " + setupData.nombre + "..." }]);
+  if (route.view === "loading") {
+    return (
+      <div className="min-h-screen bg-slate-900 flex items-center justify-center">
+        <Loader2 className="animate-spin text-emerald-400" size={48} />
+      </div>
+    );
+  }
 
+  if (route.view === "admin") {
+    return <AdminView />;
+  }
+
+  if (route.view === "cliente") {
+    return <ClienteView empresaId={route.empresaId} />;
+  }
+
+  return null;
+}
+
+// ============================================
+// VISTA ADMIN (para el vendedor)
+// ============================================
+function AdminView() {
+  const [empresas, setEmpresas] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [creating, setCreating] = useState(false);
+  const [showForm, setShowForm] = useState(false);
+  const [formData, setFormData] = useState({ nombre: "", url: "" });
+  const [copiedId, setCopiedId] = useState(null);
+
+  // Cargar empresas existentes
+  useEffect(() => {
+    loadEmpresas();
+  }, []);
+
+  const loadEmpresas = async () => {
+    try {
+      const res = await fetch("/.netlify/functions/admin-empresas");
+      if (res.ok) {
+        const data = await res.json();
+        setEmpresas(data.empresas || []);
+      }
+    } catch (err) {
+      console.error(err);
+    }
+    setLoading(false);
+  };
+
+  const crearEmpresa = async () => {
+    if (!formData.nombre.trim()) return;
+    
+    setCreating(true);
     try {
       const res = await fetch("/.netlify/functions/research-company", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          nombreEmpresa: setupData.nombre,
-          urlSitio: setupData.url,
-          emailCliente: setupData.email,
+          nombreEmpresa: formData.nombre,
+          urlSitio: formData.url,
         }),
       });
-
-      const data = await res.json();
-      setEmpresa({ id: data.empresa_id, nombre: setupData.nombre });
       
-      setMessages([
-        { 
-          role: "assistant", 
-          content: data.saludo + "\n\nComo nuevo CEO, necesito entender mejor los números internos y la operación. ¿Puedo hacerte algunas preguntas?" 
-        }
-      ]);
+      if (res.ok) {
+        setFormData({ nombre: "", url: "" });
+        setShowForm(false);
+        loadEmpresas();
+      }
     } catch (err) {
       console.error(err);
-      setMessages([{ role: "assistant", content: "Hubo un error en la investigación. Pero no importa, ¡empecemos de cero! Contame sobre " + setupData.nombre + ". ¿A qué se dedican?" }]);
+      alert("Error al crear empresa");
+    }
+    setCreating(false);
+  };
+
+  const copyLink = (empresaId) => {
+    const link = `${window.location.origin}/e/${empresaId}`;
+    navigator.clipboard.writeText(link);
+    setCopiedId(empresaId);
+    setTimeout(() => setCopiedId(null), 2000);
+  };
+
+  return (
+    <div className="min-h-screen bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900 text-white p-6">
+      <div className="max-w-4xl mx-auto">
+        <div className="flex justify-between items-center mb-8">
+          <div>
+            <h1 className="text-3xl font-bold bg-gradient-to-r from-blue-400 to-emerald-400 bg-clip-text text-transparent">
+              CEO Virtual
+            </h1>
+            <p className="text-slate-400">Panel de Administración</p>
+          </div>
+          <button
+            onClick={() => setShowForm(true)}
+            className="bg-emerald-600 hover:bg-emerald-500 px-4 py-2 rounded-lg flex items-center gap-2"
+          >
+            <Plus size={20} /> Nueva Empresa
+          </button>
+        </div>
+
+        {/* Formulario nueva empresa */}
+        {showForm && (
+          <div className="bg-slate-800 rounded-2xl p-6 mb-6 border border-slate-700">
+            <h2 className="text-xl font-semibold mb-4">Configurar Nueva Empresa</h2>
+            <p className="text-slate-400 text-sm mb-4">
+              El CEO investigará la empresa antes de presentarse al cliente.
+            </p>
+            
+            <div className="space-y-4">
+              <div>
+                <label className="block text-sm text-slate-400 mb-1">Nombre de la empresa *</label>
+                <input
+                  type="text"
+                  value={formData.nombre}
+                  onChange={(e) => setFormData({ ...formData, nombre: e.target.value })}
+                  className="w-full bg-slate-900 border border-slate-700 rounded-lg px-4 py-3 focus:outline-none focus:border-emerald-500"
+                  placeholder="Ej: Distribuidora Solar SA"
+                />
+              </div>
+              
+              <div>
+                <label className="block text-sm text-slate-400 mb-1">Sitio web (opcional pero recomendado)</label>
+                <div className="flex items-center gap-2">
+                  <Globe size={20} className="text-slate-500" />
+                  <input
+                    type="url"
+                    value={formData.url}
+                    onChange={(e) => setFormData({ ...formData, url: e.target.value })}
+                    className="flex-1 bg-slate-900 border border-slate-700 rounded-lg px-4 py-3 focus:outline-none focus:border-emerald-500"
+                    placeholder="https://ejemplo.com"
+                  />
+                </div>
+              </div>
+            </div>
+            
+            <div className="flex gap-3 mt-6">
+              <button
+                onClick={crearEmpresa}
+                disabled={creating || !formData.nombre.trim()}
+                className="bg-gradient-to-r from-emerald-600 to-blue-600 hover:from-emerald-500 hover:to-blue-500 px-6 py-3 rounded-lg font-medium flex items-center gap-2 disabled:opacity-50"
+              >
+                {creating ? <Loader2 className="animate-spin" size={18} /> : <Brain size={18} />}
+                {creating ? "Investigando..." : "Crear y Preparar CEO"}
+              </button>
+              <button
+                onClick={() => setShowForm(false)}
+                className="px-6 py-3 text-slate-400 hover:text-white"
+              >
+                Cancelar
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* Lista de empresas */}
+        <div className="space-y-4">
+          <h2 className="text-xl font-semibold">Empresas Activas</h2>
+          
+          {loading ? (
+            <div className="text-center py-12">
+              <Loader2 className="animate-spin mx-auto text-emerald-400" size={32} />
+            </div>
+          ) : empresas.length === 0 ? (
+            <div className="bg-slate-800/50 rounded-2xl p-12 text-center border border-slate-700">
+              <Building2 size={48} className="mx-auto mb-4 text-slate-600" />
+              <p className="text-slate-400">No hay empresas configuradas</p>
+              <p className="text-slate-500 text-sm">Creá una para empezar</p>
+            </div>
+          ) : (
+            empresas.map((emp) => (
+              <div key={emp.id} className="bg-slate-800/50 rounded-xl p-4 border border-slate-700 flex items-center justify-between">
+                <div className="flex items-center gap-4">
+                  <div className="w-12 h-12 bg-gradient-to-r from-emerald-600 to-blue-600 rounded-lg flex items-center justify-center">
+                    <Building2 size={24} />
+                  </div>
+                  <div>
+                    <h3 className="font-semibold">{emp.nombre}</h3>
+                    <p className="text-slate-400 text-sm">{emp.rubro || "Rubro por definir"}</p>
+                  </div>
+                </div>
+                
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={() => copyLink(emp.id)}
+                    className="bg-slate-700 hover:bg-slate-600 px-4 py-2 rounded-lg flex items-center gap-2 text-sm"
+                  >
+                    {copiedId === emp.id ? <Check size={16} /> : <Copy size={16} />}
+                    {copiedId === emp.id ? "Copiado!" : "Copiar Link"}
+                  </button>
+                  <a
+                    href={`/e/${emp.id}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="bg-emerald-600 hover:bg-emerald-500 px-4 py-2 rounded-lg flex items-center gap-2 text-sm"
+                  >
+                    <ExternalLink size={16} /> Abrir
+                  </a>
+                </div>
+              </div>
+            ))
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ============================================
+// VISTA CLIENTE (para el dueño de la empresa)
+// ============================================
+function ClienteView({ empresaId }) {
+  const [empresa, setEmpresa] = useState(null);
+  const [messages, setMessages] = useState([]);
+  const [inputValue, setInputValue] = useState("");
+  const [loading, setLoading] = useState(true);
+  const [sending, setSending] = useState(false);
+  const [pendingFile, setPendingFile] = useState(null);
+  const messagesEndRef = useRef(null);
+  const fileInputRef = useRef(null);
+
+  // Auto-scroll
+  useEffect(() => {
+    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, [messages]);
+
+  // Cargar empresa y saludo inicial
+  useEffect(() => {
+    initChat();
+  }, [empresaId]);
+
+  const initChat = async () => {
+    try {
+      const res = await fetch(`/.netlify/functions/init-cliente?empresa_id=${empresaId}`);
+      if (res.ok) {
+        const data = await res.json();
+        setEmpresa(data.empresa);
+        setMessages([{ role: "assistant", content: data.saludo }]);
+      } else {
+        setMessages([{ role: "assistant", content: "Hmm, no encontré la configuración de esta empresa. ¿El link es correcto?" }]);
+      }
+    } catch (err) {
+      console.error(err);
+      setMessages([{ role: "assistant", content: "Error al conectar. Intentá recargar la página." }]);
     }
     setLoading(false);
   };
 
-  // === CHAT: Enviar mensaje ===
+  // Enviar mensaje
   const handleSendMessage = async () => {
-    if (!inputValue.trim() || loading) return;
+    if ((!inputValue.trim() && !pendingFile) || sending) return;
 
     const userMessage = inputValue;
     setInputValue("");
-    setMessages(prev => [...prev, { role: "user", content: userMessage }]);
-    setLoading(true);
+    setSending(true);
+
+    // Mostrar mensaje del usuario
+    if (pendingFile) {
+      setMessages(prev => [...prev, { 
+        role: "user", 
+        content: userMessage || "Adjunté un archivo",
+        file: { name: pendingFile.name, type: pendingFile.type }
+      }]);
+    } else {
+      setMessages(prev => [...prev, { role: "user", content: userMessage }]);
+    }
 
     try {
+      let fileData = null;
+      
+      if (pendingFile) {
+        fileData = await processFile(pendingFile);
+        setPendingFile(null);
+      }
+
       const res = await fetch("/.netlify/functions/chat-ceo", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          empresa_id: empresa?.id,
+          empresa_id: empresaId,
           mensaje: userMessage,
-          historial: messages.slice(-10), // Últimos 10 mensajes para contexto
+          historial: messages.slice(-10),
+          archivo: fileData,
         }),
       });
 
@@ -81,23 +313,56 @@ export default function App() {
       console.error(err);
       setMessages(prev => [...prev, { role: "assistant", content: "Perdón, tuve un problema. ¿Podés repetir?" }]);
     }
-    setLoading(false);
+    setSending(false);
   };
 
-  // === UPLOAD: Procesar archivo ===
-  const [fileData, setFileData] = useState(null);
-  const [fileType, setFileType] = useState(null);
-  const [fileName, setFileName] = useState("");
-  const [preview, setPreview] = useState(null);
-  const [analysis, setAnalysis] = useState(null);
-
-  const detectFileType = (file) => {
+  // Procesar archivo
+  const processFile = async (file) => {
     const ext = file.name.split(".").pop().toLowerCase();
-    if (["jpg", "jpeg", "png", "gif", "webp"].includes(ext)) return "image";
-    if (ext === "pdf") return "pdf";
-    if (["xlsx", "xls"].includes(ext)) return "excel";
-    if (ext === "csv") return "csv";
-    return "unknown";
+    
+    if (ext === "csv") {
+      return new Promise((resolve) => {
+        Papa.parse(file, {
+          header: true,
+          skipEmptyLines: true,
+          dynamicTyping: true,
+          complete: (results) => {
+            resolve({
+              type: "tabular",
+              fileName: file.name,
+              headers: results.meta.fields,
+              rows: results.data.slice(0, 100),
+              totalRows: results.data.length,
+            });
+          },
+        });
+      });
+    } else if (["xlsx", "xls"].includes(ext)) {
+      const buffer = await file.arrayBuffer();
+      const workbook = XLSX.read(buffer, { type: "array" });
+      const sheet = workbook.Sheets[workbook.SheetNames[0]];
+      const jsonData = XLSX.utils.sheet_to_json(sheet, { header: 1 });
+      const headers = jsonData[0] || [];
+      const rows = jsonData.slice(1).map(row => {
+        const obj = {};
+        headers.forEach((h, i) => obj[h] = row[i]);
+        return obj;
+      });
+      return {
+        type: "tabular",
+        fileName: file.name,
+        headers,
+        rows: rows.slice(0, 100),
+        totalRows: rows.length,
+      };
+    } else if (["jpg", "jpeg", "png", "gif", "webp"].includes(ext)) {
+      const base64 = await fileToBase64(file);
+      return { type: "image", fileName: file.name, base64, mediaType: file.type };
+    } else if (ext === "pdf") {
+      const base64 = await fileToBase64(file);
+      return { type: "pdf", fileName: file.name, base64 };
+    }
+    return null;
   };
 
   const fileToBase64 = (file) => {
@@ -109,315 +374,128 @@ export default function App() {
     });
   };
 
-  const handleFileUpload = async (e) => {
+  const handleFileSelect = (e) => {
     const file = e.target.files[0];
-    if (!file) return;
-
-    setFileName(file.name);
-    setLoading(true);
-    const type = detectFileType(file);
-    setFileType(type);
-
-    try {
-      if (type === "csv") {
-        Papa.parse(file, {
-          header: true,
-          skipEmptyLines: true,
-          dynamicTyping: true,
-          complete: (results) => {
-            setFileData({ type: "tabular", headers: results.meta.fields, rows: results.data.slice(0, 100), totalRows: results.data.length });
-            setPreview({ type: "table", data: results.data.slice(0, 5), headers: results.meta.fields });
-            setLoading(false);
-          },
-        });
-      } else if (type === "excel") {
-        const buffer = await file.arrayBuffer();
-        const workbook = XLSX.read(buffer, { type: "array" });
-        const sheet = workbook.Sheets[workbook.SheetNames[0]];
-        const jsonData = XLSX.utils.sheet_to_json(sheet, { header: 1 });
-        const headers = jsonData[0] || [];
-        const rows = jsonData.slice(1).map(row => {
-          const obj = {};
-          headers.forEach((h, i) => obj[h] = row[i]);
-          return obj;
-        });
-        setFileData({ type: "tabular", headers, rows: rows.slice(0, 100), totalRows: rows.length });
-        setPreview({ type: "table", data: rows.slice(0, 5), headers });
-        setLoading(false);
-      } else if (type === "image") {
-        const base64 = await fileToBase64(file);
-        setFileData({ type: "image", base64, mediaType: file.type });
-        setPreview({ type: "image", url: URL.createObjectURL(file) });
-        setLoading(false);
-      } else if (type === "pdf") {
-        const base64 = await fileToBase64(file);
-        setFileData({ type: "pdf", base64 });
-        setPreview({ type: "pdf", name: file.name, size: (file.size / 1024).toFixed(1) + " KB" });
-        setLoading(false);
-      }
-    } catch (err) {
-      alert("Error al leer el archivo");
-      setLoading(false);
-    }
+    if (file) setPendingFile(file);
   };
 
-  const analyzeFile = async () => {
-    setLoading(true);
-    try {
-      const res = await fetch("/.netlify/functions/analyze-file", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ fileType: fileData.type, fileName, empresa_id: empresa?.id, ...fileData }),
-      });
-      const data = await res.json();
-      setAnalysis(data);
-    } catch (err) {
-      alert("Error en el análisis");
-    }
-    setLoading(false);
+  const getFileIcon = (type) => {
+    if (type?.startsWith("image")) return Image;
+    if (type?.includes("pdf")) return FileText;
+    return FileSpreadsheet;
   };
+
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900 flex items-center justify-center">
+        <div className="text-center">
+          <Loader2 className="animate-spin mx-auto text-emerald-400 mb-4" size={48} />
+          <p className="text-slate-400">Conectando con tu CEO Virtual...</p>
+        </div>
+      </div>
+    );
+  }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900 text-white">
-      {/* HOME */}
-      {mode === "home" && (
-        <div className="flex flex-col items-center justify-center min-h-screen p-6">
-          <h1 className="text-5xl font-bold mb-4 bg-gradient-to-r from-blue-400 to-emerald-400 bg-clip-text text-transparent">
-            CEO Virtual
-          </h1>
-          <p className="text-slate-400 mb-12 text-center max-w-md">
-            Tu asistente ejecutivo con inteligencia artificial. Conoce tu empresa, analiza datos y te ayuda a tomar decisiones.
-          </p>
-          
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6 w-full max-w-2xl">
-            <button
-              onClick={() => setMode("setup")}
-              className="bg-gradient-to-r from-emerald-600 to-blue-600 hover:from-emerald-500 hover:to-blue-500 p-8 rounded-2xl flex flex-col items-center gap-4 transition-all"
-            >
-              <Building2 size={48} />
-              <span className="text-xl font-semibold">Nueva Empresa</span>
-              <span className="text-sm text-slate-300">Configurar un nuevo CEO</span>
-            </button>
-            
-            <button
-              onClick={() => empresa ? setMode("chat") : alert("Primero configurá una empresa")}
-              className="bg-slate-700 hover:bg-slate-600 p-8 rounded-2xl flex flex-col items-center gap-4 transition-all"
-            >
-              <MessageSquare size={48} />
-              <span className="text-xl font-semibold">Continuar</span>
-              <span className="text-sm text-slate-400">{empresa ? empresa.nombre : "Sin empresa activa"}</span>
+    <div className="flex flex-col h-screen bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900 text-white">
+      {/* Header */}
+      <div className="bg-slate-800/50 border-b border-slate-700 px-6 py-4 flex items-center gap-3">
+        <div className="w-10 h-10 bg-gradient-to-r from-emerald-500 to-blue-500 rounded-full flex items-center justify-center">
+          <Brain size={20} />
+        </div>
+        <div>
+          <h1 className="font-semibold">CEO Virtual</h1>
+          <p className="text-sm text-slate-400">{empresa?.nombre || "Cargando..."}</p>
+        </div>
+      </div>
+
+      {/* Messages */}
+      <div className="flex-1 overflow-y-auto p-6 space-y-4">
+        {messages.map((msg, i) => (
+          <div key={i} className={`flex ${msg.role === "user" ? "justify-end" : "justify-start"}`}>
+            <div className={`max-w-2xl px-4 py-3 rounded-2xl ${
+              msg.role === "user" 
+                ? "bg-emerald-600 text-white" 
+                : "bg-slate-800 text-slate-200"
+            }`}>
+              {msg.file && (
+                <div className="flex items-center gap-2 mb-2 pb-2 border-b border-slate-600">
+                  {(() => { const Icon = getFileIcon(msg.file.type); return <Icon size={16} />; })()}
+                  <span className="text-sm">{msg.file.name}</span>
+                </div>
+              )}
+              <div className="whitespace-pre-wrap">{msg.content}</div>
+            </div>
+          </div>
+        ))}
+        {sending && (
+          <div className="flex justify-start">
+            <div className="bg-slate-800 px-4 py-3 rounded-2xl">
+              <Loader2 className="animate-spin text-emerald-400" size={20} />
+            </div>
+          </div>
+        )}
+        <div ref={messagesEndRef} />
+      </div>
+
+      {/* Pending file indicator */}
+      {pendingFile && (
+        <div className="px-6 pb-2">
+          <div className="bg-slate-800 rounded-lg px-4 py-2 flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              {(() => { const Icon = getFileIcon(pendingFile.type); return <Icon size={18} className="text-emerald-400" />; })()}
+              <span className="text-sm">{pendingFile.name}</span>
+            </div>
+            <button onClick={() => setPendingFile(null)} className="text-slate-400 hover:text-white">
+              <X size={18} />
             </button>
           </div>
         </div>
       )}
 
-      {/* SETUP */}
-      {mode === "setup" && (
-        <div className="flex flex-col items-center justify-center min-h-screen p-6">
-          <div className="w-full max-w-md">
-            <h2 className="text-2xl font-bold mb-2">Configurar Nueva Empresa</h2>
-            <p className="text-slate-400 mb-8">El CEO investigará todo lo posible antes de presentarse</p>
-            
-            <div className="space-y-4">
-              <div>
-                <label className="block text-sm text-slate-400 mb-1">Nombre de la empresa *</label>
-                <input
-                  type="text"
-                  value={setupData.nombre}
-                  onChange={(e) => setSetupData({ ...setupData, nombre: e.target.value })}
-                  className="w-full bg-slate-800 border border-slate-700 rounded-lg px-4 py-3 focus:outline-none focus:border-emerald-500"
-                  placeholder="Ej: Distribuidora Solar SA"
-                />
-              </div>
-              
-              <div>
-                <label className="block text-sm text-slate-400 mb-1">Sitio web (opcional)</label>
-                <div className="flex items-center gap-2">
-                  <Globe size={20} className="text-slate-500" />
-                  <input
-                    type="url"
-                    value={setupData.url}
-                    onChange={(e) => setSetupData({ ...setupData, url: e.target.value })}
-                    className="flex-1 bg-slate-800 border border-slate-700 rounded-lg px-4 py-3 focus:outline-none focus:border-emerald-500"
-                    placeholder="https://ejemplo.com"
-                  />
-                </div>
-              </div>
-              
-              <div>
-                <label className="block text-sm text-slate-400 mb-1">Email del cliente (opcional)</label>
-                <input
-                  type="email"
-                  value={setupData.email}
-                  onChange={(e) => setSetupData({ ...setupData, email: e.target.value })}
-                  className="w-full bg-slate-800 border border-slate-700 rounded-lg px-4 py-3 focus:outline-none focus:border-emerald-500"
-                  placeholder="cliente@empresa.com"
-                />
-              </div>
-            </div>
-            
-            <button
-              onClick={handleSetup}
-              disabled={loading || !setupData.nombre.trim()}
-              className="w-full mt-8 bg-gradient-to-r from-emerald-600 to-blue-600 hover:from-emerald-500 hover:to-blue-500 py-4 rounded-xl font-semibold flex items-center justify-center gap-2 disabled:opacity-50"
-            >
-              {loading ? <Loader2 className="animate-spin" /> : <Brain />}
-              {loading ? "Investigando..." : "Iniciar CEO Virtual"}
-            </button>
-            
-            <button onClick={() => setMode("home")} className="w-full mt-4 text-slate-500 hover:text-slate-300">
-              ← Volver
-            </button>
-          </div>
+      {/* Input */}
+      <div className="bg-slate-800/50 border-t border-slate-700 px-6 py-4">
+        <div className="flex gap-3 max-w-4xl mx-auto">
+          <button
+            onClick={() => fileInputRef.current?.click()}
+            className="bg-slate-700 hover:bg-slate-600 p-3 rounded-xl"
+          >
+            <Paperclip size={20} />
+          </button>
+          <input
+            type="file"
+            ref={fileInputRef}
+            onChange={handleFileSelect}
+            accept=".csv,.xlsx,.xls,.pdf,.jpg,.jpeg,.png,.gif,.webp"
+            className="hidden"
+          />
+          <textarea
+            value={inputValue}
+            onChange={(e) => setInputValue(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter" && !e.shiftKey) {
+                e.preventDefault();
+                handleSendMessage();
+              }
+            }}
+            placeholder="Escribí tu mensaje... (Shift+Enter para nueva línea)"
+            rows={1}
+            className="flex-1 bg-slate-900 border border-slate-700 rounded-xl px-4 py-3 focus:outline-none focus:border-emerald-500 resize-none overflow-hidden"
+            style={{ minHeight: "48px", maxHeight: "150px" }}
+            onInput={(e) => {
+              e.target.style.height = "48px";
+              e.target.style.height = Math.min(e.target.scrollHeight, 150) + "px";
+            }}
+          />
+          <button
+            onClick={handleSendMessage}
+            disabled={sending || (!inputValue.trim() && !pendingFile)}
+            className="bg-emerald-600 hover:bg-emerald-500 px-6 rounded-xl disabled:opacity-50"
+          >
+            <Send size={20} />
+          </button>
         </div>
-      )}
-
-      {/* ONBOARDING / CHAT */}
-      {(mode === "onboarding" || mode === "chat") && (
-        <div className="flex flex-col h-screen">
-          {/* Header */}
-          <div className="bg-slate-800/50 border-b border-slate-700 px-6 py-4 flex items-center justify-between">
-            <div className="flex items-center gap-3">
-              <div className="w-10 h-10 bg-gradient-to-r from-emerald-500 to-blue-500 rounded-full flex items-center justify-center">
-                <Brain size={20} />
-              </div>
-              <div>
-                <h1 className="font-semibold">CEO Virtual</h1>
-                <p className="text-sm text-slate-400">{empresa?.nombre || "Nueva empresa"}</p>
-              </div>
-            </div>
-            <div className="flex gap-2">
-              <button
-                onClick={() => setMode("upload")}
-                className="bg-slate-700 hover:bg-slate-600 px-4 py-2 rounded-lg flex items-center gap-2 text-sm"
-              >
-                <Upload size={16} /> Subir archivo
-              </button>
-            </div>
-          </div>
-
-          {/* Messages */}
-          <div className="flex-1 overflow-y-auto p-6 space-y-4">
-            {messages.map((msg, i) => (
-              <div key={i} className={`flex ${msg.role === "user" ? "justify-end" : "justify-start"}`}>
-                <div className={`max-w-2xl px-4 py-3 rounded-2xl ${
-                  msg.role === "user" 
-                    ? "bg-emerald-600 text-white" 
-                    : msg.role === "system"
-                      ? "bg-slate-700 text-slate-400 italic"
-                      : "bg-slate-800 text-slate-200"
-                }`}>
-                  {msg.content}
-                </div>
-              </div>
-            ))}
-            {loading && (
-              <div className="flex justify-start">
-                <div className="bg-slate-800 px-4 py-3 rounded-2xl">
-                  <Loader2 className="animate-spin text-emerald-400" size={20} />
-                </div>
-              </div>
-            )}
-            <div ref={messagesEndRef} />
-          </div>
-
-          {/* Input */}
-          <div className="bg-slate-800/50 border-t border-slate-700 px-6 py-4">
-            <div className="flex gap-3 max-w-4xl mx-auto">
-              <textarea
-                value={inputValue}
-                onChange={(e) => setInputValue(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter" && !e.shiftKey) {
-                    e.preventDefault();
-                    handleSendMessage();
-                  }
-                }}
-                placeholder="Escribí tu mensaje... (Shift+Enter para nueva línea)"
-                rows={1}
-                className="flex-1 bg-slate-900 border border-slate-700 rounded-xl px-4 py-3 focus:outline-none focus:border-emerald-500 resize-none overflow-hidden"
-                style={{ minHeight: "48px", maxHeight: "150px" }}
-                onInput={(e) => {
-                  e.target.style.height = "48px";
-                  e.target.style.height = Math.min(e.target.scrollHeight, 150) + "px";
-                }}
-              />
-              <button
-                onClick={handleSendMessage}
-                disabled={loading || !inputValue.trim()}
-                className="bg-emerald-600 hover:bg-emerald-500 px-6 rounded-xl disabled:opacity-50"
-              >
-                <Send size={20} />
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* UPLOAD */}
-      {mode === "upload" && (
-        <div className="min-h-screen p-6">
-          <div className="max-w-4xl mx-auto">
-            <button onClick={() => setMode("chat")} className="text-slate-400 hover:text-white mb-6">
-              ← Volver al chat
-            </button>
-            
-            <h2 className="text-2xl font-bold mb-6">Subir información</h2>
-
-            {!fileData ? (
-              <div className="border-2 border-dashed border-slate-600 rounded-2xl p-12 text-center hover:border-emerald-500 transition-colors">
-                <Upload size={48} className="mx-auto mb-4 text-slate-500" />
-                <p className="text-slate-300 mb-2">Subí cualquier archivo de tu empresa</p>
-                <p className="text-slate-500 text-sm mb-4">CSV, Excel, PDF, o imágenes</p>
-                <label className="cursor-pointer bg-emerald-600 hover:bg-emerald-500 px-6 py-3 rounded-lg font-medium inline-block">
-                  Seleccionar archivo
-                  <input type="file" accept=".csv,.xlsx,.xls,.pdf,.jpg,.jpeg,.png,.gif,.webp" onChange={handleFileUpload} className="hidden" />
-                </label>
-              </div>
-            ) : !analysis ? (
-              <div className="bg-slate-800/50 rounded-2xl p-6 border border-slate-700">
-                <div className="flex justify-between items-center mb-4">
-                  <h3 className="text-xl font-semibold">{fileName}</h3>
-                  <button onClick={analyzeFile} disabled={loading} className="bg-gradient-to-r from-blue-600 to-emerald-600 px-5 py-2.5 rounded-lg flex items-center gap-2">
-                    {loading ? <Loader2 className="animate-spin" size={18} /> : <Brain size={18} />}
-                    Analizar con IA
-                  </button>
-                </div>
-                {preview?.type === "table" && (
-                  <div className="overflow-x-auto">
-                    <table className="w-full text-sm">
-                      <thead>
-                        <tr className="border-b border-slate-700">
-                          {preview.headers.map((h, i) => <th key={i} className="text-left p-2 text-slate-400">{h}</th>)}
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {preview.data.map((row, i) => (
-                          <tr key={i} className="border-b border-slate-700/50">
-                            {preview.headers.map((h, j) => <td key={j} className="p-2 text-slate-300 truncate max-w-[150px]">{row[h]?.toString() || "-"}</td>)}
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                )}
-                {preview?.type === "image" && <img src={preview.url} alt="Preview" className="max-h-64 rounded-lg mx-auto" />}
-                {preview?.type === "pdf" && <div className="text-center py-8"><FileText size={64} className="mx-auto mb-4 text-slate-500" /><p>{preview.size}</p></div>}
-              </div>
-            ) : (
-              <div className="space-y-6">
-                <div className="bg-gradient-to-r from-blue-900/50 to-emerald-900/50 rounded-2xl p-6 border border-emerald-700/50">
-                  <h3 className="text-xl font-semibold mb-2">Interpretación</h3>
-                  <p className="text-slate-300">{analysis.interpretacion}</p>
-                </div>
-                <button onClick={() => { setFileData(null); setAnalysis(null); setMode("chat"); }} className="w-full bg-emerald-600 py-4 rounded-xl font-semibold">
-                  Listo, volver al chat
-                </button>
-              </div>
-            )}
-          </div>
-        </div>
-      )}
+      </div>
     </div>
   );
 }
