@@ -103,11 +103,14 @@ Responde SOLO con JSON válido (sin markdown):
         descripcion: research.descripcion,
         productos_servicios: research.productos_servicios,
         onboarding_completo: false,
+        url_sitio: urlSitio || null,
+        ultimo_research: new Date().toISOString(),
       }),
     });
     const empresa = await empresaRes.json();
 
-    // 5. Guardar hechos encontrados
+    // 5. Guardar hechos encontrados CON TRAZABILIDAD
+    const hoyISO = new Date().toISOString().split('T')[0];
     for (const dato of research.datos_interesantes || []) {
       await fetch(`${pbUrl}/api/collections/hechos/records`, {
         method: "POST",
@@ -116,8 +119,12 @@ Responde SOLO con JSON válido (sin markdown):
           empresa_id: empresa.id,
           categoria: "otro",
           hecho: dato,
-          fuente: urlSitio || "investigación inicial",
+          fuente_tipo: urlSitio ? "web" : "research",
+          fuente_nombre: urlSitio || "investigación inicial",
+          fuente_url: urlSitio || null,
+          fuente_fecha: hoyISO,
           relevancia: "media",
+          confianza: urlSitio ? "alta" : "media",
           vigente: true,
         }),
       });
