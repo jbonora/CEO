@@ -7,61 +7,160 @@ export async function handler(event) {
 
   try {
     const apiKey = process.env.ANTHROPIC_API_KEY;
-    console.log("API Key exists:", !!apiKey);
-    console.log("API Key length:", apiKey ? apiKey.length : 0);
-    console.log("API Key starts with:", apiKey ? apiKey.substring(0, 15) : "UNDEFINED");
-    console.log("API Key ends with:", apiKey ? apiKey.substring(apiKey.length - 10) : "UNDEFINED");
+    const body = JSON.parse(event.body);
+    const { fileType, fileName } = body;
 
-    const { fileContent, fileName, headers, totalRows } = JSON.parse(event.body);
+    const client = new Anthropic({ apiKey });
+
+    let messages = [];
+
+    if (fileType === "tabular") {
+      const { headers, rows, totalRows } = body;
+      const prompt = `Analiza estos datos tabulares de una empresa y propone un esquema de base de datos inteligente.
+
 Archivo: ${fileName}
-Columnas encontradas: ${headers.join(", ")}
-Muestra de datos (primeras 5 filas):
-${JSON.stringify(fileContent.slice(0, 5), null, 2)}
+Columnas: ${headers.join(", ")}
+Muestra (5 filas): ${JSON.stringify(rows.slice(0, 5), null, 2)}
 Total de registros: ${totalRows}
 
-Responde SOLO con un JSON válido (sin markdown, sin backticks) con esta estructura:
+Responde SOLO con JSON válido (sin markdown):
 {
-  "interpretacion": "Qué tipo de datos son estos en 1-2 oraciones",
+  "interpretacion": "descripción en 1-2 oraciones",
   "coleccion_principal": {
     "nombre": "nombre_sugerido",
-    "descripcion": "para qué sirve esta colección"
+    "descripcion": "para qué sirve"
   },
   "campos": [
     {
-      "original": "nombre columna original",
+      "original": "columna original",
       "sugerido": "nombre_normalizado",
       "tipo": "text|number|date|email|url|relation|bool",
-      "descripcion": "qué representa este campo",
+      "descripcion": "qué representa",
       "es_clave": true/false
     }
   ],
   "colecciones_relacionadas": [
+    {"nombre": "...", "razon": "...", "campo_origen": "..."}
+  ],
+  "preguntas_ceo": ["pregunta de negocio 1", "pregunta 2"]
+}`;
+
+      messages = [{ role: "user", content: prompt }];
+
+    } else if (fileType === "image") {
+      const { base64, mediaType } = body;
+      const prompt = `Analiza esta imagen de un documento empresarial (puede ser una factura, recibo, tarjeta, pizarra, etc).
+
+Extrae TODA la información relevante que encuentres.
+
+Responde SOLO con JSON válido (sin markdown):
+{
+  "interpretacion": "qué tipo de documento es y de qué se trata",
+  "datos_extraidos": {
+    "campo1": "valor1",
+    "campo2": "valor2"
+  },
+  "coleccion_principal": {
+    "nombre": "nombre_sugerido para guardar este tipo de datos",
+    "descripcion": "para qué sirve"
+  },
+  "campos": [
     {
-      "nombre": "nombre_coleccion",
-      "razon": "por qué extraer esto a otra colección",
-      "campo_origen": "de qué columna se extrae"
+      "original": "dato encontrado",
+      "sugerido": "nombre_campo",
+      "tipo": "text|number|date|email|url|bool",
+      "descripcion": "qué representa",
+      "es_clave": true/false
     }
   ],
-  "insights": ["observación útil 1", "observación útil 2"],
-  "preguntas_ceo": ["pregunta de negocio que podrías responder con estos datos"]
+  "acciones_sugeridas": ["acción 1", "acción 2"],
+  "preguntas_ceo": ["pregunta relevante 1"]
 }`;
+
+      messages = [{
+        role: "user",
+        content: [
+          {
+            type: "image",
+            source: {
+              type: "base64",
+              media_type: mediaType,
+              data: base64,
+            },
+          },
+          { type: "text", text: prompt },
+        ],
+      }];
+
+    } else if (fileType === "pdf") {
+      const { base64 } = body;
+      const prompt = `Analiza este documento PDF empresarial.
+
+Extrae la información más relevante: números, fechas, nombres, montos, conceptos clave.
+
+Responde SOLO con JSON válido (sin markdown):
+{
+  "interpretacion": "qué tipo de documento es y resumen del contenido",
+  "datos_extraidos": {
+    "campo1": "valor1",
+    "campo2": "valor2"
+  },
+  "coleccion_principal": {
+    "nombre": "nombre_sugerido",
+    "descripcion": "para qué sirve"
+  },
+  "campos": [
+    {
+      "original": "dato encontrado",
+      "sugerido": "nombre_campo",
+      "tipo": "text|number|date|email|url|bool",
+      "descripcion": "qué representa",
+      "es_clave": true/false
+    }
+  ],
+  "resumen_ejecutivo": "resumen en 2-3 oraciones para un CEO",
+  "acciones_sugeridas": ["acción 1", "acción 2"],
+  "preguntas_ceo": ["pregunta relevante 1"]
+}`;
+
+      messages = [{
+        role: "user",
+        content: [
+          {
+            type: "document",
+            source: {
+              type: "base64",
+              media_type: "application/pdf",
+              data: base64,
+            },
+          },
+          { type: "text", text: prompt },
+        ],
+      }];
+
+    } else {
+      return {
+        statusCode: 400,
+        body: JSON.stringify({ error: "Tipo de archivo no soportado" }),
+      };
+    }
 
     const message = await client.messages.create({
       model: "claude-sonnet-4-20250514",
-      max_tokens: 2000,
-      messages: [{ role: "user", content: prompt }],
+      max_tokens: 4000,
+      messages: messages,
     });
 
     const responseText = message.content[0].text;
-    const parsed = JSON.parse(responseText);
+    const cleanJson = responseText.replace(/```json\n?/g, "").replace(/```\n?/g, "").trim();
+    const parsed = JSON.parse(cleanJson);
 
     return {
       statusCode: 200,
-      headers: {
-        "Content-Type": "application/json",
-      },
+      headers: { "Content-Type": "application/json" },
       body: JSON.stringify(parsed),
     };
+
   } catch (error) {
     console.error("Error:", error);
     return {
