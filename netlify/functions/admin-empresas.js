@@ -32,7 +32,7 @@ export async function handler(event) {
     };
 
     // Obtener empresas
-    const empresasRes = await fetch(`${pbUrl}/api/collections/empresas/records?sort=-created`, {
+    const empresasRes = await fetch(`${pbUrl}/api/collections/empresas/records`, {
       headers: pbHeaders,
     });
     
