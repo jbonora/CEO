@@ -53,7 +53,7 @@ export default function App() {
     window.addEventListener('resize', resize)
 
     const MAX_PARTICLES = 700
-    const MAX_SMOKE = 250
+    const MAX_SMOKE = 100
     const particles = []
     const smoke = []
 
@@ -261,16 +261,16 @@ export default function App() {
         pp.radius += dt * (6 + p.turbulence * 6)
 
         if (pp.life > pp.maxLife || pp.temp <= 0.02 || pp.y < -30 || pp.x < -50 || pp.x > w + 50) {
-          if (pp.temp < 0.18 && pp.y > -20 && smoke.length < MAX_SMOKE) {
+          if (pp.temp < 0.12 && pp.y > -20 && Math.random() < 0.25 && smoke.length < MAX_SMOKE) {
             smoke.push({
               x: pp.x,
               y: pp.y,
               vx: pp.vx * 0.3,
               vy: pp.vy * 0.5,
               life: 0,
-              maxLife: 2.2 + Math.random() * 2,
-              radius: pp.radius * 0.9,
-              alpha: 0.18,
+              maxLife: 1.6 + Math.random() * 1.4,
+              radius: pp.radius * 0.8,
+              alpha: 0.08,
               seed: Math.random() * 1000,
             })
           }
