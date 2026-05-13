@@ -1,630 +1,489 @@
-import { useState, useRef, useEffect } from "react";
-import { Upload, Brain, Loader2, FileSpreadsheet, FileText, Image, Send, Building2, Globe, Plus, ExternalLink, Copy, Check, Paperclip, X } from "lucide-react";
-import Papa from "papaparse";
-import * as XLSX from "xlsx";
+import React, { useEffect, useRef, useState } from 'react'
 
 export default function App() {
-  const [route, setRoute] = useState({ view: "loading", empresaId: null });
+  const canvasRef = useRef(null)
+
+  const [wind, setWind] = useState(0)
+  const [oxygen, setOxygen] = useState(0.85)
+  const [wickHeight, setWickHeight] = useState(0.7)
+  const [turbulence, setTurbulence] = useState(0.45)
+  const [burning, setBurning] = useState(true)
+  const [stats, setStats] = useState({ particles: 0, temp: 0 })
+
+  const paramsRef = useRef({
+    wind: 0,
+    oxygen: 0.85,
+    wickHeight: 0.7,
+    turbulence: 0.45,
+    burning: true,
+    gust: 0,
+  })
 
   useEffect(() => {
-    const path = window.location.pathname;
-    if (path.startsWith("/e/")) {
-      const empresaId = path.replace("/e/", "");
-      setRoute({ view: "cliente", empresaId });
-    } else if (path === "/admin" || path === "/admin/") {
-      setRoute({ view: "admin", empresaId: null });
-    } else {
-      setRoute({ view: "admin", empresaId: null });
-    }
-  }, []);
+    paramsRef.current.wind = wind
+    paramsRef.current.oxygen = oxygen
+    paramsRef.current.wickHeight = wickHeight
+    paramsRef.current.turbulence = turbulence
+    paramsRef.current.burning = burning
+  }, [wind, oxygen, wickHeight, turbulence, burning])
 
-  if (route.view === "loading") {
-    return (
-      <div className="min-h-screen bg-slate-900 flex items-center justify-center">
-        <Loader2 className="animate-spin text-emerald-400" size={48} />
-      </div>
-    );
+  const applyGust = () => {
+    const dir = paramsRef.current.wind !== 0
+      ? Math.sign(paramsRef.current.wind)
+      : (Math.random() < 0.5 ? -1 : 1)
+    paramsRef.current.gust = dir * (0.8 + Math.random() * 0.6)
   }
 
-  if (route.view === "admin") return <AdminView />;
-  if (route.view === "cliente") return <ClienteView empresaId={route.empresaId} />;
-  return null;
-}
-
-// ============================================
-// VISTA ADMIN
-// ============================================
-function AdminView() {
-  const [empresas, setEmpresas] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [creating, setCreating] = useState(false);
-  const [showForm, setShowForm] = useState(false);
-  const [formData, setFormData] = useState({ 
-    nombre: "", 
-    url: "", 
-    rubro: "",
-    productos: "",
-    clientes: "",
-    empleados: "",
-    ubicacion: "",
-    notas: ""
-  });
-  const [copiedId, setCopiedId] = useState(null);
-
   useEffect(() => {
-    loadEmpresas();
-  }, []);
+    const canvas = canvasRef.current
+    const ctx = canvas.getContext('2d')
 
-  const loadEmpresas = async () => {
-    try {
-      const res = await fetch("/.netlify/functions/admin-empresas");
-      if (res.ok) {
-        const data = await res.json();
-        setEmpresas(data.empresas || []);
-      }
-    } catch (err) {
-      console.error(err);
+    const dpr = Math.min(window.devicePixelRatio || 1, 2)
+    let w = 0, h = 0
+
+    const resize = () => {
+      const rect = canvas.getBoundingClientRect()
+      w = rect.width
+      h = rect.height
+      canvas.width = Math.floor(w * dpr)
+      canvas.height = Math.floor(h * dpr)
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0)
     }
-    setLoading(false);
-  };
+    resize()
+    window.addEventListener('resize', resize)
 
-  const crearEmpresa = async () => {
-    if (!formData.nombre.trim()) return;
-    
-    setCreating(true);
-    try {
-      const res = await fetch("/.netlify/functions/research-company", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          nombreEmpresa: formData.nombre,
-          urlSitio: formData.url,
-          infoManual: {
-            rubro: formData.rubro,
-            productos: formData.productos,
-            clientes: formData.clientes,
-            empleados: formData.empleados,
-            ubicacion: formData.ubicacion,
-            notas: formData.notas,
+    const MAX_PARTICLES = 700
+    const MAX_SMOKE = 250
+    const particles = []
+    const smoke = []
+
+    let lastT = performance.now()
+    let noiseT = 0
+    const seedA = Math.random() * 1000
+    const seedB = Math.random() * 1000
+
+    const noise = (x) =>
+      Math.sin(x * 1.3) * 0.55 +
+      Math.sin(x * 2.7 + 1.3) * 0.3 +
+      Math.sin(x * 5.1 + 4.2) * 0.15
+
+    const colorFromTemp = (t) => {
+      t = t < 0 ? 0 : t > 1 ? 1 : t
+      if (t < 0.15) {
+        const g = 30 + t * 250
+        return [g, g * 0.85, g * 0.7]
+      } else if (t < 0.4) {
+        const k = (t - 0.15) / 0.25
+        return [180 + k * 70, 30 + k * 70, 20 + k * 30]
+      } else if (t < 0.65) {
+        const k = (t - 0.4) / 0.25
+        return [250, 100 + k * 110, 50 + k * 30]
+      } else if (t < 0.88) {
+        const k = (t - 0.65) / 0.23
+        return [255, 210 + k * 45, 90 + k * 110]
+      } else {
+        const k = (t - 0.88) / 0.12
+        return [240 - k * 70, 240 - k * 40, 190 + k * 65]
+      }
+    }
+
+    const emit = (cx, cy, p, dt) => {
+      const intensity = p.oxygen * (0.55 + p.wickHeight * 0.7)
+      const count = intensity * 110 * dt
+      const whole = Math.floor(count) + (Math.random() < (count % 1) ? 1 : 0)
+      for (let i = 0; i < whole; i++) {
+        if (particles.length >= MAX_PARTICLES) break
+        const spread = 1.6 + p.wickHeight * 1.4
+        const offsetX = (Math.random() - 0.5) * spread
+        const offsetY = (Math.random() - 0.2) * 2
+        particles.push({
+          x: cx + offsetX,
+          y: cy + offsetY,
+          vx: (Math.random() - 0.5) * 8,
+          vy: -(8 + Math.random() * 14),
+          life: 0,
+          maxLife: 0.9 + Math.random() * 0.7 + p.wickHeight * 0.3,
+          radius: 3 + Math.random() * 4,
+          temp: 0.86 + Math.random() * 0.14,
+          seed: Math.random() * 1000,
+        })
+      }
+    }
+
+    let rafId
+
+    const step = () => {
+      const now = performance.now()
+      let dt = (now - lastT) / 1000
+      if (dt > 0.05) dt = 0.05
+      lastT = now
+      noiseT += dt
+
+      const p = paramsRef.current
+      p.gust *= Math.pow(0.18, dt)
+
+      const candleWidth = Math.min(80, w * 0.11)
+      const candleBottom = h - 24
+      const candleTop = Math.min(h * 0.6, candleBottom - 180)
+      const wickBaseX = w / 2
+      const wickBaseY = candleTop
+      const wickLen = 18 * p.wickHeight
+      const wickTipX = wickBaseX
+      const wickTipY = wickBaseY - wickLen
+
+      const bg = ctx.createLinearGradient(0, 0, 0, h)
+      bg.addColorStop(0, '#0a0612')
+      bg.addColorStop(0.6, '#050308')
+      bg.addColorStop(1, '#000000')
+      ctx.fillStyle = bg
+      ctx.fillRect(0, 0, w, h)
+
+      const flicker = noise(noiseT * 2.4 + seedA)
+      const slowFlicker = noise(noiseT * 0.7 + seedB)
+      const glowAlpha = p.burning
+        ? Math.max(0, p.oxygen) * (0.28 + flicker * 0.06 + slowFlicker * 0.04)
+        : 0
+
+      if (glowAlpha > 0) {
+        const ambient = ctx.createRadialGradient(
+          wickTipX, wickTipY, 8,
+          wickTipX, wickTipY, 320
+        )
+        ambient.addColorStop(0, `rgba(255, 170, 70, ${glowAlpha})`)
+        ambient.addColorStop(0.5, `rgba(255, 110, 40, ${glowAlpha * 0.35})`)
+        ambient.addColorStop(1, 'rgba(255, 80, 20, 0)')
+        ctx.fillStyle = ambient
+        ctx.fillRect(0, 0, w, h)
+      }
+
+      const cx0 = wickBaseX - candleWidth / 2
+      const cx1 = wickBaseX + candleWidth / 2
+      const candleGrad = ctx.createLinearGradient(cx0, 0, cx1, 0)
+      candleGrad.addColorStop(0, '#2a1d12')
+      candleGrad.addColorStop(0.25, '#a8916e')
+      candleGrad.addColorStop(0.5, '#efdfbf')
+      candleGrad.addColorStop(0.75, '#9c8460')
+      candleGrad.addColorStop(1, '#1d130a')
+      ctx.fillStyle = candleGrad
+      ctx.fillRect(cx0, candleTop, candleWidth, candleBottom - candleTop)
+
+      ctx.fillStyle = 'rgba(255, 230, 190, 0.5)'
+      ctx.beginPath()
+      ctx.ellipse(cx0 + candleWidth * 0.18, candleTop + 30, 4, 12, 0, 0, Math.PI * 2)
+      ctx.ellipse(cx1 - candleWidth * 0.22, candleTop + 50, 3, 18, 0, 0, Math.PI * 2)
+      ctx.fill()
+
+      ctx.fillStyle = '#1b1209'
+      ctx.beginPath()
+      ctx.ellipse(wickBaseX, candleTop, candleWidth / 2, 7, 0, 0, Math.PI * 2)
+      ctx.fill()
+      ctx.fillStyle = '#6b4f30'
+      ctx.beginPath()
+      ctx.ellipse(wickBaseX, candleTop + 1.5, candleWidth / 2 - 4, 4.5, 0, 0, Math.PI * 2)
+      ctx.fill()
+
+      if (p.burning && p.oxygen > 0.1) {
+        ctx.globalCompositeOperation = 'lighter'
+        const pool = ctx.createRadialGradient(wickBaseX, candleTop + 1, 1, wickBaseX, candleTop + 1, candleWidth / 2)
+        pool.addColorStop(0, 'rgba(255, 160, 60, 0.45)')
+        pool.addColorStop(1, 'rgba(255, 80, 20, 0)')
+        ctx.fillStyle = pool
+        ctx.beginPath()
+        ctx.ellipse(wickBaseX, candleTop + 1, candleWidth / 2 - 4, 4, 0, 0, Math.PI * 2)
+        ctx.fill()
+        ctx.globalCompositeOperation = 'source-over'
+      }
+
+      const wickCurl = (p.wind + p.gust) * 3
+      ctx.strokeStyle = p.burning ? '#15100a' : '#3a2c1d'
+      ctx.lineWidth = 2.6
+      ctx.lineCap = 'round'
+      ctx.beginPath()
+      ctx.moveTo(wickBaseX, candleTop)
+      ctx.quadraticCurveTo(
+        wickBaseX + wickCurl * 0.3,
+        (candleTop + wickTipY) / 2,
+        wickTipX + wickCurl,
+        wickTipY
+      )
+      ctx.stroke()
+
+      if (p.burning && p.oxygen > 0.05) {
+        emit(wickTipX + wickCurl * 0.5, wickTipY, p, dt)
+      }
+
+      const haloSize = (38 + p.wickHeight * 50) * (0.85 + flicker * 0.12 + p.oxygen * 0.25)
+      if (p.burning && p.oxygen > 0.05) {
+        ctx.globalCompositeOperation = 'lighter'
+        const lean = (p.wind + p.gust) * 22
+        const halo = ctx.createRadialGradient(
+          wickTipX + lean * 0.5,
+          wickTipY - 14 - p.wickHeight * 12,
+          2,
+          wickTipX + lean,
+          wickTipY - 14 - p.wickHeight * 12,
+          haloSize
+        )
+        const haloI = Math.min(1, p.oxygen * 1.15)
+        halo.addColorStop(0, `rgba(255, 230, 170, ${0.65 * haloI})`)
+        halo.addColorStop(0.35, `rgba(255, 140, 50, ${0.35 * haloI})`)
+        halo.addColorStop(1, 'rgba(255, 80, 20, 0)')
+        ctx.fillStyle = halo
+        ctx.fillRect(0, 0, w, h)
+        ctx.globalCompositeOperation = 'source-over'
+      }
+
+      ctx.globalCompositeOperation = 'lighter'
+      let avgTemp = 0
+      let aliveCount = 0
+
+      for (let i = particles.length - 1; i >= 0; i--) {
+        const pp = particles[i]
+        pp.life += dt
+
+        const buoyancy = -240 * pp.temp * (0.55 + p.oxygen * 0.55)
+        const drag = 1.5
+        const windForce = (p.wind * 110 + p.gust * 180) * (0.4 + pp.life * 0.9)
+        const tn1 = noise(pp.seed + noiseT * 3.2 + pp.y * 0.025)
+        const tn2 = noise(pp.seed + 30 + noiseT * 2.6 + pp.x * 0.025)
+        const turbStrength = (40 + p.turbulence * 160) * (0.4 + pp.life * 1.2)
+        const turbX = tn1 * turbStrength
+        const turbY = tn2 * turbStrength * 0.35
+
+        pp.vx += (windForce + turbX - pp.vx * drag) * dt
+        pp.vy += (buoyancy + turbY - pp.vy * drag) * dt
+
+        pp.x += pp.vx * dt
+        pp.y += pp.vy * dt
+
+        const coolRate = 0.6 / (0.25 + p.oxygen)
+        pp.temp -= coolRate * dt
+        pp.radius += dt * (6 + p.turbulence * 6)
+
+        if (pp.life > pp.maxLife || pp.temp <= 0.02 || pp.y < -30 || pp.x < -50 || pp.x > w + 50) {
+          if (pp.temp < 0.18 && pp.y > -20 && smoke.length < MAX_SMOKE) {
+            smoke.push({
+              x: pp.x,
+              y: pp.y,
+              vx: pp.vx * 0.3,
+              vy: pp.vy * 0.5,
+              life: 0,
+              maxLife: 2.2 + Math.random() * 2,
+              radius: pp.radius * 0.9,
+              alpha: 0.18,
+              seed: Math.random() * 1000,
+            })
           }
-        }),
-      });
-      
-      if (res.ok) {
-        setFormData({ nombre: "", url: "", rubro: "", productos: "", clientes: "", empleados: "", ubicacion: "", notas: "" });
-        setShowForm(false);
-        loadEmpresas();
+          particles.splice(i, 1)
+          continue
+        }
+
+        avgTemp += pp.temp
+        aliveCount++
+
+        const [r, g, b] = colorFromTemp(pp.temp)
+        const a = pp.temp * 0.85
+        const grad = ctx.createRadialGradient(pp.x, pp.y, 0, pp.x, pp.y, pp.radius)
+        grad.addColorStop(0, `rgba(${r | 0}, ${g | 0}, ${b | 0}, ${a})`)
+        grad.addColorStop(1, `rgba(${r | 0}, ${g | 0}, ${b | 0}, 0)`)
+        ctx.fillStyle = grad
+        ctx.beginPath()
+        ctx.arc(pp.x, pp.y, pp.radius, 0, Math.PI * 2)
+        ctx.fill()
       }
-    } catch (err) {
-      console.error(err);
-      alert("Error al crear empresa");
-    }
-    setCreating(false);
-  };
 
-  const copyLink = (empresaId) => {
-    const link = `${window.location.origin}/e/${empresaId}`;
-    navigator.clipboard.writeText(link);
-    setCopiedId(empresaId);
-    setTimeout(() => setCopiedId(null), 2000);
-  };
-
-  const deleteEmpresa = async (empresaId, nombre) => {
-    if (!confirm(`¿ELIMINAR "${nombre}" completamente?\n\n⚠️ Esto borrará TODO: empresa, conversaciones, hechos, métricas. No se puede deshacer.`)) {
-      return;
-    }
-
-    try {
-      const res = await fetch("/.netlify/functions/delete-empresa", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ empresa_id: empresaId }),
-      });
-
-      if (res.ok) {
-        alert("✅ Empresa eliminada");
-        loadEmpresas();
-      } else {
-        alert("Error al eliminar");
+      if (p.burning && p.oxygen > 0.05) {
+        const tipGlow = ctx.createRadialGradient(
+          wickTipX + wickCurl,
+          wickTipY,
+          0,
+          wickTipX + wickCurl,
+          wickTipY,
+          14
+        )
+        tipGlow.addColorStop(0, 'rgba(255, 230, 170, 0.95)')
+        tipGlow.addColorStop(1, 'rgba(255, 120, 40, 0)')
+        ctx.fillStyle = tipGlow
+        ctx.beginPath()
+        ctx.arc(wickTipX + wickCurl, wickTipY, 14, 0, Math.PI * 2)
+        ctx.fill()
       }
-    } catch (err) {
-      console.error(err);
-      alert("Error al eliminar");
-    }
-  };
 
-  const resetEmpresa = async (empresaId, nombre) => {
-    if (!confirm(`¿Reiniciar conversación de "${nombre}"?\n\nEsto borrará el historial de chat. La investigación inicial se mantiene.`)) {
-      return;
-    }
+      ctx.globalCompositeOperation = 'source-over'
 
-    try {
-      const res = await fetch("/.netlify/functions/reset-empresa", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ empresa_id: empresaId }),
-      });
-
-      if (res.ok) {
-        alert("✅ Conversación reiniciada");
-      } else {
-        alert("Error al reiniciar");
+      for (let i = smoke.length - 1; i >= 0; i--) {
+        const s = smoke[i]
+        s.life += dt
+        s.vy -= 22 * dt
+        const sn = noise(s.seed + noiseT * 1.4)
+        s.vx += (sn * 35 + p.wind * 60 + p.gust * 90) * dt
+        s.vx *= Math.pow(0.45, dt)
+        s.vy *= Math.pow(0.7, dt)
+        s.x += s.vx * dt
+        s.y += s.vy * dt
+        s.radius += dt * 10
+        if (s.life > s.maxLife) {
+          smoke.splice(i, 1)
+          continue
+        }
+        const t = s.life / s.maxLife
+        const alpha = s.alpha * (1 - t)
+        const grad = ctx.createRadialGradient(s.x, s.y, 0, s.x, s.y, s.radius)
+        grad.addColorStop(0, `rgba(90, 90, 95, ${alpha})`)
+        grad.addColorStop(1, `rgba(40, 40, 45, 0)`)
+        ctx.fillStyle = grad
+        ctx.beginPath()
+        ctx.arc(s.x, s.y, s.radius, 0, Math.PI * 2)
+        ctx.fill()
       }
-    } catch (err) {
-      console.error(err);
-      alert("Error al reiniciar");
+
+      if (Math.random() < 0.06) {
+        setStats({
+          particles: aliveCount,
+          temp: aliveCount ? avgTemp / aliveCount : 0,
+        })
+      }
+
+      rafId = requestAnimationFrame(step)
     }
-  };
+
+    rafId = requestAnimationFrame(step)
+
+    return () => {
+      cancelAnimationFrame(rafId)
+      window.removeEventListener('resize', resize)
+    }
+  }, [])
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900 text-white p-6">
-      <div className="max-w-4xl mx-auto">
-        <div className="flex justify-between items-center mb-8">
-          <div>
-            <h1 className="text-3xl font-bold bg-gradient-to-r from-blue-400 to-emerald-400 bg-clip-text text-transparent">
-              CEO Virtual
-            </h1>
-            <p className="text-slate-400">Panel de Administración</p>
+    <div className="min-h-screen bg-black text-gray-200">
+      <div className="max-w-6xl mx-auto p-4 md:p-6">
+        <header className="mb-4">
+          <h1 className="text-2xl md:text-3xl font-bold text-orange-300">
+            Simulador de llama de vela
+          </h1>
+          <p className="text-sm text-gray-400 mt-1 max-w-3xl">
+            Combustión simplificada del pábilo: emisión de gases calientes, flotabilidad
+            por gradiente térmico, enfriamiento por convección y campo de aire con viento,
+            ráfagas y turbulencia (ruido suave).
+          </p>
+        </header>
+
+        <div className="grid grid-cols-1 lg:grid-cols-[1fr_300px] gap-4">
+          <div className="relative rounded-lg overflow-hidden border border-gray-800 bg-black aspect-[4/3] lg:aspect-auto lg:h-[640px]">
+            <canvas ref={canvasRef} className="absolute inset-0 w-full h-full" />
           </div>
-          <button
-            onClick={() => setShowForm(true)}
-            className="bg-emerald-600 hover:bg-emerald-500 px-4 py-2 rounded-lg flex items-center gap-2"
-          >
-            <Plus size={20} /> Nueva Empresa
-          </button>
-        </div>
 
-        {showForm && (
-          <div className="bg-slate-800 rounded-2xl p-6 mb-6 border border-slate-700">
-            <h2 className="text-xl font-semibold mb-4">Configurar Nueva Empresa</h2>
-            <p className="text-slate-400 text-sm mb-4">
-              Completá lo que sepas. El CEO usará esta info + lo que encuentre en la web.
-            </p>
-            
-            <div className="space-y-4">
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-sm text-slate-400 mb-1">Nombre de la empresa *</label>
-                  <input
-                    type="text"
-                    value={formData.nombre}
-                    onChange={(e) => setFormData({ ...formData, nombre: e.target.value })}
-                    className="w-full bg-slate-900 border border-slate-700 rounded-lg px-4 py-2 focus:outline-none focus:border-emerald-500"
-                    placeholder="Ej: Distribuidora Solar SA"
-                  />
-                </div>
-                
-                <div>
-                  <label className="block text-sm text-slate-400 mb-1">Sitio web o Instagram (si tiene)</label>
-                  <input
-                    type="url"
-                    value={formData.url}
-                    onChange={(e) => setFormData({ ...formData, url: e.target.value })}
-                    className="w-full bg-slate-900 border border-slate-700 rounded-lg px-4 py-2 focus:outline-none focus:border-emerald-500"
-                    placeholder="https://ejemplo.com o instagram.com/..."
-                  />
-                </div>
-              </div>
+          <aside className="space-y-4 bg-gray-900/60 rounded-lg p-4 border border-gray-800">
+            <button
+              onClick={() => setBurning((b) => !b)}
+              className={`w-full py-2.5 rounded-md font-semibold transition ${
+                burning
+                  ? 'bg-orange-600 hover:bg-orange-500 text-white'
+                  : 'bg-gray-700 hover:bg-gray-600 text-gray-200'
+              }`}
+            >
+              {burning ? 'Apagar mecha' : 'Encender mecha'}
+            </button>
 
-              <div className="border-t border-slate-700 pt-4 mt-4">
-                <p className="text-sm text-emerald-400 mb-3">📝 Tu investigación previa (opcional pero útil)</p>
-                
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <div>
-                    <label className="block text-sm text-slate-400 mb-1">Rubro</label>
-                    <input
-                      type="text"
-                      value={formData.rubro}
-                      onChange={(e) => setFormData({ ...formData, rubro: e.target.value })}
-                      className="w-full bg-slate-900 border border-slate-700 rounded-lg px-4 py-2 focus:outline-none focus:border-emerald-500"
-                      placeholder="Ej: Mayorista alimenticio"
-                    />
-                  </div>
-                  
-                  <div>
-                    <label className="block text-sm text-slate-400 mb-1">Ubicación</label>
-                    <input
-                      type="text"
-                      value={formData.ubicacion}
-                      onChange={(e) => setFormData({ ...formData, ubicacion: e.target.value })}
-                      className="w-full bg-slate-900 border border-slate-700 rounded-lg px-4 py-2 focus:outline-none focus:border-emerald-500"
-                      placeholder="Ej: Buenos Aires, Zona Sur"
-                    />
-                  </div>
-                  
-                  <div>
-                    <label className="block text-sm text-slate-400 mb-1">Qué vende / servicios</label>
-                    <input
-                      type="text"
-                      value={formData.productos}
-                      onChange={(e) => setFormData({ ...formData, productos: e.target.value })}
-                      className="w-full bg-slate-900 border border-slate-700 rounded-lg px-4 py-2 focus:outline-none focus:border-emerald-500"
-                      placeholder="Ej: Alimentos, bebidas, limpieza"
-                    />
-                  </div>
-                  
-                  <div>
-                    <label className="block text-sm text-slate-400 mb-1">Clientes típicos</label>
-                    <input
-                      type="text"
-                      value={formData.clientes}
-                      onChange={(e) => setFormData({ ...formData, clientes: e.target.value })}
-                      className="w-full bg-slate-900 border border-slate-700 rounded-lg px-4 py-2 focus:outline-none focus:border-emerald-500"
-                      placeholder="Ej: Kioscos, almacenes, minoristas"
-                    />
-                  </div>
-                  
-                  <div>
-                    <label className="block text-sm text-slate-400 mb-1">Empleados aprox</label>
-                    <input
-                      type="text"
-                      value={formData.empleados}
-                      onChange={(e) => setFormData({ ...formData, empleados: e.target.value })}
-                      className="w-full bg-slate-900 border border-slate-700 rounded-lg px-4 py-2 focus:outline-none focus:border-emerald-500"
-                      placeholder="Ej: 5-10"
-                    />
-                  </div>
-                </div>
-                
-                <div className="mt-4">
-                  <label className="block text-sm text-slate-400 mb-1">Notas adicionales (lo que viste en Instagram, lo que te contaron, etc.)</label>
-                  <textarea
-                    value={formData.notas}
-                    onChange={(e) => setFormData({ ...formData, notas: e.target.value })}
-                    rows={3}
-                    className="w-full bg-slate-900 border border-slate-700 rounded-lg px-4 py-2 focus:outline-none focus:border-emerald-500 resize-none"
-                    placeholder="Ej: Tiene Instagram activo con 5k seguidores. El dueño se llama Juan. Hacen promos los viernes..."
-                  />
-                </div>
-              </div>
-            </div>
-            
-            <div className="flex gap-3 mt-6">
-              <button
-                onClick={crearEmpresa}
-                disabled={creating || !formData.nombre.trim()}
-                className="bg-gradient-to-r from-emerald-600 to-blue-600 hover:from-emerald-500 hover:to-blue-500 px-6 py-3 rounded-lg font-medium flex items-center gap-2 disabled:opacity-50"
-              >
-                {creating ? <Loader2 className="animate-spin" size={18} /> : <Brain size={18} />}
-                {creating ? "Investigando..." : "Crear y Preparar CEO"}
-              </button>
-              <button
-                onClick={() => setShowForm(false)}
-                className="px-6 py-3 text-slate-400 hover:text-white"
-              >
-                Cancelar
-              </button>
-            </div>
-          </div>
-        )}
+            <Slider
+              label="Viento horizontal"
+              value={wind}
+              min={-1}
+              max={1}
+              step={0.01}
+              onChange={setWind}
+              hint={
+                Math.abs(wind) < 0.02
+                  ? 'sin viento'
+                  : wind > 0
+                  ? `→ ${(wind * 100) | 0}%`
+                  : `← ${(-wind * 100) | 0}%`
+              }
+            />
 
-        <div className="space-y-4">
-          <h2 className="text-xl font-semibold">Empresas Activas</h2>
-          
-          {loading ? (
-            <div className="text-center py-12">
-              <Loader2 className="animate-spin mx-auto text-emerald-400" size={32} />
+            <Slider
+              label="Oxígeno disponible"
+              value={oxygen}
+              min={0}
+              max={1}
+              step={0.01}
+              onChange={setOxygen}
+              hint={`${(oxygen * 100) | 0}%`}
+            />
+
+            <Slider
+              label="Longitud de mecha"
+              value={wickHeight}
+              min={0.3}
+              max={1.5}
+              step={0.01}
+              onChange={setWickHeight}
+              hint={`${wickHeight.toFixed(2)}×`}
+            />
+
+            <Slider
+              label="Turbulencia del aire"
+              value={turbulence}
+              min={0}
+              max={1}
+              step={0.01}
+              onChange={setTurbulence}
+              hint={`${(turbulence * 100) | 0}%`}
+            />
+
+            <button
+              onClick={applyGust}
+              className="w-full py-2 rounded-md bg-sky-700 hover:bg-sky-600 font-semibold"
+            >
+              Soplar (ráfaga)
+            </button>
+
+            <div className="text-xs text-gray-400 border-t border-gray-800 pt-3 space-y-1">
+              <Stat label="Partículas activas" value={stats.particles} />
+              <Stat
+                label="Temp. media estimada"
+                value={`${(stats.temp * 1800) | 0} K`}
+              />
+              <p className="pt-3 text-[11px] leading-relaxed text-gray-500">
+                La cera vaporizada arde con O₂; los gases calientes se elevan por
+                flotabilidad (ρ baja con T), se enfrían y forman humo gris. Reducir
+                oxígeno apaga la combustión; el viento y la turbulencia inclinan y
+                quiebran el penacho.
+              </p>
             </div>
-          ) : empresas.length === 0 ? (
-            <div className="bg-slate-800/50 rounded-2xl p-12 text-center border border-slate-700">
-              <Building2 size={48} className="mx-auto mb-4 text-slate-600" />
-              <p className="text-slate-400">No hay empresas configuradas</p>
-              <p className="text-slate-500 text-sm">Creá una para empezar</p>
-            </div>
-          ) : (
-            empresas.map((emp) => (
-              <div key={emp.id} className="bg-slate-800/50 rounded-xl p-4 border border-slate-700 flex items-center justify-between">
-                <div className="flex items-center gap-4">
-                  <div className="w-12 h-12 bg-gradient-to-r from-emerald-600 to-blue-600 rounded-lg flex items-center justify-center">
-                    <Building2 size={24} />
-                  </div>
-                  <div>
-                    <h3 className="font-semibold">{emp.nombre}</h3>
-                    <p className="text-slate-400 text-sm">{emp.rubro || "Rubro por definir"}</p>
-                  </div>
-                </div>
-                
-                <div className="flex items-center gap-2">
-                  <button
-                    onClick={() => deleteEmpresa(emp.id, emp.nombre)}
-                    className="bg-red-900/50 hover:bg-red-800 px-3 py-2 rounded-lg text-sm text-red-300"
-                    title="Eliminar empresa completamente"
-                  >
-                    🗑️
-                  </button>
-                  <button
-                    onClick={() => resetEmpresa(emp.id, emp.nombre)}
-                    className="bg-orange-900/50 hover:bg-orange-800 px-3 py-2 rounded-lg text-sm text-orange-300"
-                    title="Reiniciar conversación"
-                  >
-                    🔄
-                  </button>
-                  <button
-                    onClick={() => copyLink(emp.id)}
-                    className="bg-slate-700 hover:bg-slate-600 px-4 py-2 rounded-lg flex items-center gap-2 text-sm"
-                  >
-                    {copiedId === emp.id ? <Check size={16} /> : <Copy size={16} />}
-                    {copiedId === emp.id ? "Copiado!" : "Copiar Link"}
-                  </button>
-                  <a
-                    href={`/e/${emp.id}`}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="bg-emerald-600 hover:bg-emerald-500 px-4 py-2 rounded-lg flex items-center gap-2 text-sm"
-                  >
-                    <ExternalLink size={16} /> Abrir
-                  </a>
-                </div>
-              </div>
-            ))
-          )}
+          </aside>
         </div>
       </div>
     </div>
-  );
+  )
 }
 
-// ============================================
-// VISTA CLIENTE
-// ============================================
-function ClienteView({ empresaId }) {
-  const [empresa, setEmpresa] = useState(null);
-  const [messages, setMessages] = useState([]);
-  const [inputValue, setInputValue] = useState("");
-  const [loading, setLoading] = useState(true);
-  const [sending, setSending] = useState(false);
-  const [pendingFile, setPendingFile] = useState(null);
-  const messagesEndRef = useRef(null);
-  const fileInputRef = useRef(null);
-
-  useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [messages]);
-
-  useEffect(() => {
-    initChat();
-  }, [empresaId]);
-
-  const initChat = async () => {
-    try {
-      const res = await fetch(`/.netlify/functions/init-cliente?empresa_id=${empresaId}`);
-      if (res.ok) {
-        const data = await res.json();
-        setEmpresa(data.empresa);
-        if (data.mensajes && data.mensajes.length > 0) {
-          setMessages(data.mensajes);
-        } else if (data.saludo) {
-          setMessages([{ role: "assistant", content: data.saludo }]);
-        }
-      } else {
-        setMessages([{ role: "assistant", content: "Hmm, no encontré la configuración de esta empresa. ¿El link es correcto?" }]);
-      }
-    } catch (err) {
-      console.error(err);
-      setMessages([{ role: "assistant", content: "Error al conectar. Intentá recargar la página." }]);
-    }
-    setLoading(false);
-  };
-
-  const handleSendMessage = async () => {
-    if ((!inputValue.trim() && !pendingFile) || sending) return;
-
-    const userMessage = inputValue;
-    setInputValue("");
-    setSending(true);
-
-    if (pendingFile) {
-      setMessages(prev => [...prev, { 
-        role: "user", 
-        content: userMessage || "Adjunté un archivo",
-        file: { name: pendingFile.name, type: pendingFile.type }
-      }]);
-    } else {
-      setMessages(prev => [...prev, { role: "user", content: userMessage }]);
-    }
-
-    try {
-      let fileData = null;
-      
-      if (pendingFile) {
-        fileData = await processFile(pendingFile);
-        setPendingFile(null);
-      }
-
-      const res = await fetch("/.netlify/functions/chat-ceo", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          empresa_id: empresaId,
-          mensaje: userMessage,
-          archivo: fileData,
-        }),
-      });
-
-      const data = await res.json();
-      setMessages(prev => [...prev, { role: "assistant", content: data.respuesta }]);
-    } catch (err) {
-      console.error(err);
-      setMessages(prev => [...prev, { role: "assistant", content: "Perdón, tuve un problema. ¿Podés repetir?" }]);
-    }
-    setSending(false);
-  };
-
-  const processFile = async (file) => {
-    const ext = file.name.split(".").pop().toLowerCase();
-    
-    if (ext === "csv") {
-      return new Promise((resolve) => {
-        Papa.parse(file, {
-          header: true,
-          skipEmptyLines: true,
-          dynamicTyping: true,
-          complete: (results) => {
-            resolve({
-              type: "tabular",
-              fileName: file.name,
-              headers: results.meta.fields,
-              rows: results.data.slice(0, 100),
-              totalRows: results.data.length,
-            });
-          },
-        });
-      });
-    } else if (["xlsx", "xls"].includes(ext)) {
-      const buffer = await file.arrayBuffer();
-      const workbook = XLSX.read(buffer, { type: "array" });
-      const sheet = workbook.Sheets[workbook.SheetNames[0]];
-      const jsonData = XLSX.utils.sheet_to_json(sheet, { header: 1 });
-      const headers = jsonData[0] || [];
-      const rows = jsonData.slice(1).map(row => {
-        const obj = {};
-        headers.forEach((h, i) => obj[h] = row[i]);
-        return obj;
-      });
-      return {
-        type: "tabular",
-        fileName: file.name,
-        headers,
-        rows: rows.slice(0, 100),
-        totalRows: rows.length,
-      };
-    } else if (["jpg", "jpeg", "png", "gif", "webp"].includes(ext)) {
-      const base64 = await fileToBase64(file);
-      return { type: "image", fileName: file.name, base64, mediaType: file.type };
-    } else if (ext === "pdf") {
-      const base64 = await fileToBase64(file);
-      return { type: "pdf", fileName: file.name, base64 };
-    }
-    return null;
-  };
-
-  const fileToBase64 = (file) => {
-    return new Promise((resolve, reject) => {
-      const reader = new FileReader();
-      reader.onload = () => resolve(reader.result.split(",")[1]);
-      reader.onerror = reject;
-      reader.readAsDataURL(file);
-    });
-  };
-
-  const handleFileSelect = (e) => {
-    const file = e.target.files[0];
-    if (file) setPendingFile(file);
-  };
-
-  const getFileIcon = (type) => {
-    if (type?.startsWith("image")) return Image;
-    if (type?.includes("pdf")) return FileText;
-    return FileSpreadsheet;
-  };
-
-  if (loading) {
-    return (
-      <div className="min-h-screen bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900 flex items-center justify-center">
-        <div className="text-center">
-          <Loader2 className="animate-spin mx-auto text-emerald-400 mb-4" size={48} />
-          <p className="text-slate-400">Conectando con tu CEO Virtual...</p>
-        </div>
-      </div>
-    );
-  }
-
+function Slider({ label, value, min, max, step, onChange, hint }) {
   return (
-    <div className="flex flex-col h-screen bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900 text-white">
-      <div className="bg-slate-800/50 border-b border-slate-700 px-6 py-4 flex items-center gap-3">
-        <div className="w-10 h-10 bg-gradient-to-r from-emerald-500 to-blue-500 rounded-full flex items-center justify-center">
-          <Brain size={20} />
-        </div>
-        <div>
-          <h1 className="font-semibold">CEO Virtual</h1>
-          <p className="text-sm text-slate-400">{empresa?.nombre || "Cargando..."}</p>
-        </div>
+    <div>
+      <div className="flex justify-between items-baseline text-xs mb-1">
+        <span className="text-gray-300">{label}</span>
+        <span className="text-gray-500 font-mono">{hint}</span>
       </div>
-
-      <div className="flex-1 overflow-y-auto p-6 space-y-4">
-        {messages.map((msg, i) => (
-          <div key={i} className={`flex ${msg.role === "user" ? "justify-end" : "justify-start"}`}>
-            <div className={`max-w-2xl px-4 py-3 rounded-2xl ${
-              msg.role === "user" 
-                ? "bg-emerald-600 text-white" 
-                : "bg-slate-800 text-slate-200"
-            }`}>
-              {msg.file && (
-                <div className="flex items-center gap-2 mb-2 pb-2 border-b border-slate-600">
-                  {(() => { const Icon = getFileIcon(msg.file.type); return <Icon size={16} />; })()}
-                  <span className="text-sm">{msg.file.name}</span>
-                </div>
-              )}
-              <div className="whitespace-pre-wrap">{msg.content}</div>
-            </div>
-          </div>
-        ))}
-        {sending && (
-          <div className="flex justify-start">
-            <div className="bg-slate-800 px-4 py-3 rounded-2xl">
-              <Loader2 className="animate-spin text-emerald-400" size={20} />
-            </div>
-          </div>
-        )}
-        <div ref={messagesEndRef} />
-      </div>
-
-      {pendingFile && (
-        <div className="px-6 pb-2">
-          <div className="bg-slate-800 rounded-lg px-4 py-2 flex items-center justify-between">
-            <div className="flex items-center gap-2">
-              {(() => { const Icon = getFileIcon(pendingFile.type); return <Icon size={18} className="text-emerald-400" />; })()}
-              <span className="text-sm">{pendingFile.name}</span>
-            </div>
-            <button onClick={() => setPendingFile(null)} className="text-slate-400 hover:text-white">
-              <X size={18} />
-            </button>
-          </div>
-        </div>
-      )}
-
-      <div className="bg-slate-800/50 border-t border-slate-700 px-6 py-4">
-        <div className="flex gap-3 max-w-4xl mx-auto">
-          <button
-            onClick={() => fileInputRef.current?.click()}
-            className="bg-slate-700 hover:bg-slate-600 p-3 rounded-xl"
-          >
-            <Paperclip size={20} />
-          </button>
-          <input
-            type="file"
-            ref={fileInputRef}
-            onChange={handleFileSelect}
-            accept=".csv,.xlsx,.xls,.pdf,.jpg,.jpeg,.png,.gif,.webp"
-            className="hidden"
-          />
-          <textarea
-            value={inputValue}
-            onChange={(e) => setInputValue(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === "Enter" && !e.shiftKey) {
-                e.preventDefault();
-                handleSendMessage();
-              }
-            }}
-            placeholder="Escribí tu mensaje... (Shift+Enter para nueva línea)"
-            rows={1}
-            className="flex-1 bg-slate-900 border border-slate-700 rounded-xl px-4 py-3 focus:outline-none focus:border-emerald-500 resize-none overflow-hidden"
-            style={{ minHeight: "48px", maxHeight: "150px" }}
-            onInput={(e) => {
-              e.target.style.height = "48px";
-              e.target.style.height = Math.min(e.target.scrollHeight, 150) + "px";
-            }}
-          />
-          <button
-            onClick={handleSendMessage}
-            disabled={sending || (!inputValue.trim() && !pendingFile)}
-            className="bg-emerald-600 hover:bg-emerald-500 px-6 rounded-xl disabled:opacity-50"
-          >
-            <Send size={20} />
-          </button>
-        </div>
-      </div>
+      <input
+        type="range"
+        value={value}
+        min={min}
+        max={max}
+        step={step}
+        onChange={(e) => onChange(parseFloat(e.target.value))}
+        className="w-full accent-orange-500"
+      />
     </div>
-  );
+  )
+}
+
+function Stat({ label, value }) {
+  return (
+    <div className="flex justify-between">
+      <span>{label}</span>
+      <span className="text-gray-200 font-mono">{value}</span>
+    </div>
+  )
 }
