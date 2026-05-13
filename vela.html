@@ -1,0 +1,371 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Simulador de llama de vela</title>
+<style>
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; height: 100%; background: #000; color: #ddd; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
+  .wrap { max-width: 1100px; margin: 0 auto; padding: 16px; }
+  h1 { color: #ffb877; font-size: 24px; margin: 0 0 4px; }
+  p.sub { color: #999; font-size: 13px; margin: 0 0 16px; max-width: 720px; }
+  .grid { display: grid; grid-template-columns: 1fr 280px; gap: 16px; }
+  @media (max-width: 800px) { .grid { grid-template-columns: 1fr; } }
+  .stage { position: relative; height: 640px; background: #000; border: 1px solid #222; border-radius: 8px; overflow: hidden; }
+  @media (max-width: 800px) { .stage { height: 70vh; } }
+  canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
+  .panel { background: rgba(20,20,25,0.6); border: 1px solid #222; border-radius: 8px; padding: 16px; display: flex; flex-direction: column; gap: 14px; }
+  button { width: 100%; padding: 10px; border-radius: 6px; border: none; font-weight: 600; cursor: pointer; color: #fff; }
+  .btn-fire { background: #ea580c; }
+  .btn-fire:hover { background: #f97316; }
+  .btn-off { background: #4b5563; }
+  .btn-off:hover { background: #6b7280; }
+  .btn-blow { background: #0369a1; }
+  .btn-blow:hover { background: #0284c7; }
+  .slider-row { display: flex; flex-direction: column; gap: 4px; }
+  .slider-row .lbl { display: flex; justify-content: space-between; font-size: 12px; }
+  .slider-row .lbl .name { color: #ddd; }
+  .slider-row .lbl .val { color: #888; font-family: ui-monospace, Menlo, Consolas, monospace; }
+  input[type=range] { width: 100%; accent-color: #f97316; }
+  .stats { font-size: 12px; color: #999; border-top: 1px solid #222; padding-top: 12px; display: flex; flex-direction: column; gap: 4px; }
+  .stats .row { display: flex; justify-content: space-between; }
+  .stats .row .v { color: #ddd; font-family: ui-monospace, Menlo, Consolas, monospace; }
+  .note { font-size: 11px; line-height: 1.5; color: #777; padding-top: 8px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>Simulador de llama de vela</h1>
+  <p class="sub">Combustión del pábilo simplificada: emisión de gases calientes, flotabilidad por temperatura, enfriamiento por convección y campo de aire con viento, ráfagas y turbulencia.</p>
+
+  <div class="grid">
+    <div class="stage"><canvas id="cv"></canvas></div>
+
+    <div class="panel">
+      <button id="btnFire" class="btn-fire">Apagar mecha</button>
+
+      <div class="slider-row">
+        <div class="lbl"><span class="name">Viento horizontal</span><span class="val" id="vWind">sin viento</span></div>
+        <input id="sWind" type="range" min="-1" max="1" step="0.01" value="0" />
+      </div>
+      <div class="slider-row">
+        <div class="lbl"><span class="name">Oxígeno disponible</span><span class="val" id="vOx">85%</span></div>
+        <input id="sOx" type="range" min="0" max="1" step="0.01" value="0.85" />
+      </div>
+      <div class="slider-row">
+        <div class="lbl"><span class="name">Longitud de mecha</span><span class="val" id="vWick">0.70×</span></div>
+        <input id="sWick" type="range" min="0.3" max="1.5" step="0.01" value="0.7" />
+      </div>
+      <div class="slider-row">
+        <div class="lbl"><span class="name">Turbulencia del aire</span><span class="val" id="vTurb">45%</span></div>
+        <input id="sTurb" type="range" min="0" max="1" step="0.01" value="0.45" />
+      </div>
+
+      <button id="btnGust" class="btn-blow">Soplar (ráfaga)</button>
+
+      <div class="stats">
+        <div class="row"><span>Partículas activas</span><span class="v" id="vParts">0</span></div>
+        <div class="row"><span>Temp. media estimada</span><span class="v" id="vTemp">0 K</span></div>
+        <p class="note">La cera vaporizada arde con O₂; los gases calientes se elevan por flotabilidad (la densidad baja con T), se enfrían y forman humo. Reducir el oxígeno apaga la combustión; el viento y la turbulencia inclinan y quiebran el penacho.</p>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+(() => {
+  const canvas = document.getElementById('cv');
+  const ctx = canvas.getContext('2d');
+  const dpr = Math.min(window.devicePixelRatio || 1, 2);
+  let w = 0, h = 0;
+
+  const resize = () => {
+    const rect = canvas.getBoundingClientRect();
+    w = rect.width; h = rect.height;
+    canvas.width = Math.floor(w * dpr);
+    canvas.height = Math.floor(h * dpr);
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  };
+  resize();
+  window.addEventListener('resize', resize);
+
+  const params = { wind: 0, oxygen: 0.85, wickHeight: 0.7, turbulence: 0.45, burning: true, gust: 0 };
+
+  // Controls
+  const sWind = document.getElementById('sWind');
+  const sOx = document.getElementById('sOx');
+  const sWick = document.getElementById('sWick');
+  const sTurb = document.getElementById('sTurb');
+  const vWind = document.getElementById('vWind');
+  const vOx = document.getElementById('vOx');
+  const vWick = document.getElementById('vWick');
+  const vTurb = document.getElementById('vTurb');
+  const btnFire = document.getElementById('btnFire');
+  const btnGust = document.getElementById('btnGust');
+  const vParts = document.getElementById('vParts');
+  const vTemp = document.getElementById('vTemp');
+
+  sWind.oninput = () => {
+    params.wind = parseFloat(sWind.value);
+    vWind.textContent = Math.abs(params.wind) < 0.02 ? 'sin viento'
+      : params.wind > 0 ? '→ ' + (params.wind*100|0) + '%'
+      : '← ' + ((-params.wind)*100|0) + '%';
+  };
+  sOx.oninput = () => { params.oxygen = parseFloat(sOx.value); vOx.textContent = (params.oxygen*100|0) + '%'; };
+  sWick.oninput = () => { params.wickHeight = parseFloat(sWick.value); vWick.textContent = params.wickHeight.toFixed(2) + '×'; };
+  sTurb.oninput = () => { params.turbulence = parseFloat(sTurb.value); vTurb.textContent = (params.turbulence*100|0) + '%'; };
+  btnFire.onclick = () => {
+    params.burning = !params.burning;
+    btnFire.textContent = params.burning ? 'Apagar mecha' : 'Encender mecha';
+    btnFire.className = params.burning ? 'btn-fire' : 'btn-off';
+  };
+  btnGust.onclick = () => {
+    const dir = params.wind !== 0 ? Math.sign(params.wind) : (Math.random() < 0.5 ? -1 : 1);
+    params.gust = dir * (0.8 + Math.random() * 0.6);
+  };
+
+  // Simulation
+  const MAX_PARTICLES = 700, MAX_SMOKE = 250;
+  const particles = [], smoke = [];
+  let lastT = performance.now(), noiseT = 0;
+  const seedA = Math.random() * 1000, seedB = Math.random() * 1000;
+
+  const noise = (x) =>
+    Math.sin(x * 1.3) * 0.55 +
+    Math.sin(x * 2.7 + 1.3) * 0.3 +
+    Math.sin(x * 5.1 + 4.2) * 0.15;
+
+  const colorFromTemp = (t) => {
+    t = t < 0 ? 0 : t > 1 ? 1 : t;
+    if (t < 0.15) { const g = 30 + t * 250; return [g, g*0.85, g*0.7]; }
+    if (t < 0.4)  { const k = (t-0.15)/0.25; return [180+k*70, 30+k*70, 20+k*30]; }
+    if (t < 0.65) { const k = (t-0.4)/0.25;  return [250, 100+k*110, 50+k*30]; }
+    if (t < 0.88) { const k = (t-0.65)/0.23; return [255, 210+k*45, 90+k*110]; }
+    const k = (t-0.88)/0.12; return [240-k*70, 240-k*40, 190+k*65];
+  };
+
+  const emit = (cx, cy, p, dt) => {
+    const intensity = p.oxygen * (0.55 + p.wickHeight * 0.7);
+    const count = intensity * 110 * dt;
+    const whole = Math.floor(count) + (Math.random() < (count % 1) ? 1 : 0);
+    for (let i = 0; i < whole; i++) {
+      if (particles.length >= MAX_PARTICLES) break;
+      const spread = 1.6 + p.wickHeight * 1.4;
+      particles.push({
+        x: cx + (Math.random()-0.5)*spread,
+        y: cy + (Math.random()-0.2)*2,
+        vx: (Math.random()-0.5)*8,
+        vy: -(8 + Math.random()*14),
+        life: 0,
+        maxLife: 0.9 + Math.random()*0.7 + p.wickHeight*0.3,
+        radius: 3 + Math.random()*4,
+        temp: 0.86 + Math.random()*0.14,
+        seed: Math.random()*1000,
+      });
+    }
+  };
+
+  let statTick = 0;
+
+  const step = () => {
+    const now = performance.now();
+    let dt = (now - lastT) / 1000;
+    if (dt > 0.05) dt = 0.05;
+    lastT = now;
+    noiseT += dt;
+
+    const p = params;
+    p.gust *= Math.pow(0.18, dt);
+
+    const candleWidth = Math.min(80, w * 0.11);
+    const candleBottom = h - 24;
+    const candleTop = Math.min(h * 0.6, candleBottom - 180);
+    const wickBaseX = w / 2;
+    const wickLen = 18 * p.wickHeight;
+    const wickTipX = wickBaseX;
+    const wickTipY = candleTop - wickLen;
+
+    // Background
+    const bg = ctx.createLinearGradient(0, 0, 0, h);
+    bg.addColorStop(0, '#0a0612'); bg.addColorStop(0.6, '#050308'); bg.addColorStop(1, '#000');
+    ctx.fillStyle = bg; ctx.fillRect(0, 0, w, h);
+
+    const flicker = noise(noiseT * 2.4 + seedA);
+    const slowFlicker = noise(noiseT * 0.7 + seedB);
+    const glowAlpha = p.burning ? Math.max(0, p.oxygen) * (0.28 + flicker*0.06 + slowFlicker*0.04) : 0;
+
+    if (glowAlpha > 0) {
+      const ambient = ctx.createRadialGradient(wickTipX, wickTipY, 8, wickTipX, wickTipY, 320);
+      ambient.addColorStop(0, `rgba(255, 170, 70, ${glowAlpha})`);
+      ambient.addColorStop(0.5, `rgba(255, 110, 40, ${glowAlpha * 0.35})`);
+      ambient.addColorStop(1, 'rgba(255, 80, 20, 0)');
+      ctx.fillStyle = ambient; ctx.fillRect(0, 0, w, h);
+    }
+
+    // Candle body
+    const cx0 = wickBaseX - candleWidth / 2;
+    const cx1 = wickBaseX + candleWidth / 2;
+    const candleGrad = ctx.createLinearGradient(cx0, 0, cx1, 0);
+    candleGrad.addColorStop(0, '#2a1d12'); candleGrad.addColorStop(0.25, '#a8916e');
+    candleGrad.addColorStop(0.5, '#efdfbf'); candleGrad.addColorStop(0.75, '#9c8460');
+    candleGrad.addColorStop(1, '#1d130a');
+    ctx.fillStyle = candleGrad;
+    ctx.fillRect(cx0, candleTop, candleWidth, candleBottom - candleTop);
+
+    ctx.fillStyle = 'rgba(255, 230, 190, 0.5)';
+    ctx.beginPath();
+    ctx.ellipse(cx0 + candleWidth * 0.18, candleTop + 30, 4, 12, 0, 0, Math.PI*2);
+    ctx.ellipse(cx1 - candleWidth * 0.22, candleTop + 50, 3, 18, 0, 0, Math.PI*2);
+    ctx.fill();
+
+    ctx.fillStyle = '#1b1209';
+    ctx.beginPath();
+    ctx.ellipse(wickBaseX, candleTop, candleWidth/2, 7, 0, 0, Math.PI*2);
+    ctx.fill();
+    ctx.fillStyle = '#6b4f30';
+    ctx.beginPath();
+    ctx.ellipse(wickBaseX, candleTop + 1.5, candleWidth/2 - 4, 4.5, 0, 0, Math.PI*2);
+    ctx.fill();
+
+    if (p.burning && p.oxygen > 0.1) {
+      ctx.globalCompositeOperation = 'lighter';
+      const pool = ctx.createRadialGradient(wickBaseX, candleTop+1, 1, wickBaseX, candleTop+1, candleWidth/2);
+      pool.addColorStop(0, 'rgba(255, 160, 60, 0.45)');
+      pool.addColorStop(1, 'rgba(255, 80, 20, 0)');
+      ctx.fillStyle = pool;
+      ctx.beginPath();
+      ctx.ellipse(wickBaseX, candleTop+1, candleWidth/2 - 4, 4, 0, 0, Math.PI*2);
+      ctx.fill();
+      ctx.globalCompositeOperation = 'source-over';
+    }
+
+    const wickCurl = (p.wind + p.gust) * 3;
+    ctx.strokeStyle = p.burning ? '#15100a' : '#3a2c1d';
+    ctx.lineWidth = 2.6;
+    ctx.lineCap = 'round';
+    ctx.beginPath();
+    ctx.moveTo(wickBaseX, candleTop);
+    ctx.quadraticCurveTo(wickBaseX + wickCurl * 0.3, (candleTop + wickTipY) / 2, wickTipX + wickCurl, wickTipY);
+    ctx.stroke();
+
+    if (p.burning && p.oxygen > 0.05) emit(wickTipX + wickCurl * 0.5, wickTipY, p, dt);
+
+    const haloSize = (38 + p.wickHeight * 50) * (0.85 + flicker * 0.12 + p.oxygen * 0.25);
+    if (p.burning && p.oxygen > 0.05) {
+      ctx.globalCompositeOperation = 'lighter';
+      const lean = (p.wind + p.gust) * 22;
+      const halo = ctx.createRadialGradient(
+        wickTipX + lean * 0.5, wickTipY - 14 - p.wickHeight*12, 2,
+        wickTipX + lean, wickTipY - 14 - p.wickHeight*12, haloSize
+      );
+      const haloI = Math.min(1, p.oxygen * 1.15);
+      halo.addColorStop(0, `rgba(255, 230, 170, ${0.65 * haloI})`);
+      halo.addColorStop(0.35, `rgba(255, 140, 50, ${0.35 * haloI})`);
+      halo.addColorStop(1, 'rgba(255, 80, 20, 0)');
+      ctx.fillStyle = halo; ctx.fillRect(0, 0, w, h);
+      ctx.globalCompositeOperation = 'source-over';
+    }
+
+    // Particles (additive)
+    ctx.globalCompositeOperation = 'lighter';
+    let avgTemp = 0, aliveCount = 0;
+
+    for (let i = particles.length - 1; i >= 0; i--) {
+      const pp = particles[i];
+      pp.life += dt;
+
+      const buoyancy = -240 * pp.temp * (0.55 + p.oxygen * 0.55);
+      const drag = 1.5;
+      const windForce = (p.wind * 110 + p.gust * 180) * (0.4 + pp.life * 0.9);
+      const tn1 = noise(pp.seed + noiseT * 3.2 + pp.y * 0.025);
+      const tn2 = noise(pp.seed + 30 + noiseT * 2.6 + pp.x * 0.025);
+      const turbStrength = (40 + p.turbulence * 160) * (0.4 + pp.life * 1.2);
+      const turbX = tn1 * turbStrength;
+      const turbY = tn2 * turbStrength * 0.35;
+
+      pp.vx += (windForce + turbX - pp.vx * drag) * dt;
+      pp.vy += (buoyancy + turbY - pp.vy * drag) * dt;
+      pp.x += pp.vx * dt;
+      pp.y += pp.vy * dt;
+
+      const coolRate = 0.6 / (0.25 + p.oxygen);
+      pp.temp -= coolRate * dt;
+      pp.radius += dt * (6 + p.turbulence * 6);
+
+      if (pp.life > pp.maxLife || pp.temp <= 0.02 || pp.y < -30 || pp.x < -50 || pp.x > w + 50) {
+        if (pp.temp < 0.18 && pp.y > -20 && smoke.length < MAX_SMOKE) {
+          smoke.push({
+            x: pp.x, y: pp.y, vx: pp.vx * 0.3, vy: pp.vy * 0.5,
+            life: 0, maxLife: 2.2 + Math.random()*2,
+            radius: pp.radius * 0.9, alpha: 0.18, seed: Math.random()*1000,
+          });
+        }
+        particles.splice(i, 1);
+        continue;
+      }
+
+      avgTemp += pp.temp; aliveCount++;
+
+      const c = colorFromTemp(pp.temp);
+      const a = pp.temp * 0.85;
+      const grad = ctx.createRadialGradient(pp.x, pp.y, 0, pp.x, pp.y, pp.radius);
+      grad.addColorStop(0, `rgba(${c[0]|0}, ${c[1]|0}, ${c[2]|0}, ${a})`);
+      grad.addColorStop(1, `rgba(${c[0]|0}, ${c[1]|0}, ${c[2]|0}, 0)`);
+      ctx.fillStyle = grad;
+      ctx.beginPath();
+      ctx.arc(pp.x, pp.y, pp.radius, 0, Math.PI*2);
+      ctx.fill();
+    }
+
+    if (p.burning && p.oxygen > 0.05) {
+      const tipGlow = ctx.createRadialGradient(wickTipX + wickCurl, wickTipY, 0, wickTipX + wickCurl, wickTipY, 14);
+      tipGlow.addColorStop(0, 'rgba(255, 230, 170, 0.95)');
+      tipGlow.addColorStop(1, 'rgba(255, 120, 40, 0)');
+      ctx.fillStyle = tipGlow;
+      ctx.beginPath();
+      ctx.arc(wickTipX + wickCurl, wickTipY, 14, 0, Math.PI*2);
+      ctx.fill();
+    }
+
+    ctx.globalCompositeOperation = 'source-over';
+
+    // Smoke
+    for (let i = smoke.length - 1; i >= 0; i--) {
+      const s = smoke[i];
+      s.life += dt;
+      s.vy -= 22 * dt;
+      const sn = noise(s.seed + noiseT * 1.4);
+      s.vx += (sn * 35 + p.wind * 60 + p.gust * 90) * dt;
+      s.vx *= Math.pow(0.45, dt);
+      s.vy *= Math.pow(0.7, dt);
+      s.x += s.vx * dt;
+      s.y += s.vy * dt;
+      s.radius += dt * 10;
+      if (s.life > s.maxLife) { smoke.splice(i, 1); continue; }
+      const t = s.life / s.maxLife;
+      const alpha = s.alpha * (1 - t);
+      const grad = ctx.createRadialGradient(s.x, s.y, 0, s.x, s.y, s.radius);
+      grad.addColorStop(0, `rgba(90, 90, 95, ${alpha})`);
+      grad.addColorStop(1, `rgba(40, 40, 45, 0)`);
+      ctx.fillStyle = grad;
+      ctx.beginPath();
+      ctx.arc(s.x, s.y, s.radius, 0, Math.PI*2);
+      ctx.fill();
+    }
+
+    statTick += dt;
+    if (statTick > 0.15) {
+      statTick = 0;
+      vParts.textContent = aliveCount;
+      vTemp.textContent = (aliveCount ? (avgTemp/aliveCount)*1800|0 : 0) + ' K';
+    }
+
+    requestAnimationFrame(step);
+  };
+
+  requestAnimationFrame(step);
+})();
+</script>
+</body>
+</html>
