@@ -7,6 +7,7 @@ export default function App() {
   const [oxygen, setOxygen] = useState(0.85)
   const [wickHeight, setWickHeight] = useState(0.7)
   const [turbulence, setTurbulence] = useState(0.45)
+  const [smoke, setSmoke] = useState(0.3)
   const [burning, setBurning] = useState(true)
   const [stats, setStats] = useState({ particles: 0, temp: 0 })
 
@@ -15,6 +16,7 @@ export default function App() {
     oxygen: 0.85,
     wickHeight: 0.7,
     turbulence: 0.45,
+    smoke: 0.3,
     burning: true,
     gust: 0,
   })
@@ -24,8 +26,9 @@ export default function App() {
     paramsRef.current.oxygen = oxygen
     paramsRef.current.wickHeight = wickHeight
     paramsRef.current.turbulence = turbulence
+    paramsRef.current.smoke = smoke
     paramsRef.current.burning = burning
-  }, [wind, oxygen, wickHeight, turbulence, burning])
+  }, [wind, oxygen, wickHeight, turbulence, smoke, burning])
 
   const applyGust = () => {
     const dir = paramsRef.current.wind !== 0
@@ -261,16 +264,16 @@ export default function App() {
         pp.radius += dt * (6 + p.turbulence * 6)
 
         if (pp.life > pp.maxLife || pp.temp <= 0.2 || pp.y < -30 || pp.x < -50 || pp.x > w + 50) {
-          if (pp.temp < 0.25 && pp.y > -20 && Math.random() < 0.12 && smoke.length < MAX_SMOKE) {
+          if (p.smoke > 0 && pp.temp < 0.25 && pp.y > -20 && Math.random() < 0.4 * p.smoke && smoke.length < MAX_SMOKE) {
             smoke.push({
               x: pp.x,
               y: pp.y,
               vx: pp.vx * 0.3,
               vy: pp.vy * 0.5,
               life: 0,
-              maxLife: 1.4 + Math.random() * 1.0,
+              maxLife: 1.4 + Math.random() * 1.4,
               radius: pp.radius * 0.7,
-              alpha: 0.04,
+              alpha: 0.05 + 0.2 * p.smoke,
               seed: Math.random() * 1000,
             })
           }
@@ -430,6 +433,16 @@ export default function App() {
               step={0.01}
               onChange={setTurbulence}
               hint={`${(turbulence * 100) | 0}%`}
+            />
+
+            <Slider
+              label="Humo"
+              value={smoke}
+              min={0}
+              max={1}
+              step={0.01}
+              onChange={setSmoke}
+              hint={`${(smoke * 100) | 0}%`}
             />
 
             <button

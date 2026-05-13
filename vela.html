@@ -61,6 +61,10 @@
         <div class="lbl"><span class="name">Turbulencia del aire</span><span class="val" id="vTurb">45%</span></div>
         <input id="sTurb" type="range" min="0" max="1" step="0.01" value="0.45" />
       </div>
+      <div class="slider-row">
+        <div class="lbl"><span class="name">Humo</span><span class="val" id="vSmoke">30%</span></div>
+        <input id="sSmoke" type="range" min="0" max="1" step="0.01" value="0.3" />
+      </div>
 
       <button id="btnGust" class="btn-blow">Soplar (ráfaga)</button>
 
@@ -90,17 +94,19 @@
   resize();
   window.addEventListener('resize', resize);
 
-  const params = { wind: 0, oxygen: 0.85, wickHeight: 0.7, turbulence: 0.45, burning: true, gust: 0 };
+  const params = { wind: 0, oxygen: 0.85, wickHeight: 0.7, turbulence: 0.45, smoke: 0.3, burning: true, gust: 0 };
 
   // Controls
   const sWind = document.getElementById('sWind');
   const sOx = document.getElementById('sOx');
   const sWick = document.getElementById('sWick');
   const sTurb = document.getElementById('sTurb');
+  const sSmoke = document.getElementById('sSmoke');
   const vWind = document.getElementById('vWind');
   const vOx = document.getElementById('vOx');
   const vWick = document.getElementById('vWick');
   const vTurb = document.getElementById('vTurb');
+  const vSmoke = document.getElementById('vSmoke');
   const btnFire = document.getElementById('btnFire');
   const btnGust = document.getElementById('btnGust');
   const vParts = document.getElementById('vParts');
@@ -115,6 +121,7 @@
   sOx.oninput = () => { params.oxygen = parseFloat(sOx.value); vOx.textContent = (params.oxygen*100|0) + '%'; };
   sWick.oninput = () => { params.wickHeight = parseFloat(sWick.value); vWick.textContent = params.wickHeight.toFixed(2) + '×'; };
   sTurb.oninput = () => { params.turbulence = parseFloat(sTurb.value); vTurb.textContent = (params.turbulence*100|0) + '%'; };
+  sSmoke.oninput = () => { params.smoke = parseFloat(sSmoke.value); vSmoke.textContent = (params.smoke*100|0) + '%'; };
   btnFire.onclick = () => {
     params.burning = !params.burning;
     btnFire.textContent = params.burning ? 'Apagar mecha' : 'Encender mecha';
@@ -294,11 +301,11 @@
       pp.radius += dt * (6 + p.turbulence * 6);
 
       if (pp.life > pp.maxLife || pp.temp <= 0.2 || pp.y < -30 || pp.x < -50 || pp.x > w + 50) {
-        if (pp.temp < 0.25 && pp.y > -20 && Math.random() < 0.12 && smoke.length < MAX_SMOKE) {
+        if (p.smoke > 0 && pp.temp < 0.25 && pp.y > -20 && Math.random() < 0.4 * p.smoke && smoke.length < MAX_SMOKE) {
           smoke.push({
             x: pp.x, y: pp.y, vx: pp.vx * 0.3, vy: pp.vy * 0.5,
-            life: 0, maxLife: 1.4 + Math.random()*1.0,
-            radius: pp.radius * 0.7, alpha: 0.04, seed: Math.random()*1000,
+            life: 0, maxLife: 1.4 + Math.random()*1.4,
+            radius: pp.radius * 0.7, alpha: 0.05 + 0.2 * p.smoke, seed: Math.random()*1000,
           });
         }
         particles.splice(i, 1);
